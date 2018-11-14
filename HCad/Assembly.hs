@@ -58,11 +58,11 @@ freeS :: (Pointed t,Traversable t) => Linear v => Assembly (t (v (Expr)))
 freeS = sequence (point freeV)
 
 
-freeRotation :: forall v. Pointed v => Lin v => Assembly (Mat v Expr)
-freeRotation = do
-  r <- freeS :: Assembly (Mat v Expr)
-  constrainT r identity
-  return r
+-- freeRotation :: forall v. Pointed v => Lin v => Assembly (Mat v Expr)
+-- freeRotation = do
+--   r <- freeS :: Assembly (Mat v Expr)
+--   constrainT (matMul r (transpose r)) (diagonal (LinExpr zero one)) -- No (Ring Expr)!
+--   return r
 
 
 

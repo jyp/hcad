@@ -31,7 +31,7 @@ data V2 a = V2 a a deriving (Functor,Foldable,Traversable,Show,Eq)
 data V3 a = V3 a a a deriving (Functor,Foldable,Traversable,Show,Eq)
 
 instance Lin V3 where
-  identity = V3 (V3 one zero zero) (V3 zero one zero) (V3 zero zero one)
+  diagonal x = V3 (V3 x zero zero) (V3 zero x zero) (V3 zero zero x)
 
 instance Applicative V3 where
   pure x = V3 x x x
@@ -54,7 +54,7 @@ instance Ring a => Module a (V3 (V3 a)) where
   s *^ t = (s*^) <$> t
 
 class (Applicative v, Traversable v) => Lin v where
-  identity :: Ring a => Mat v a
+  diagonal :: Additive a => a -> Mat v a
 
 type Linear v = (Applicative v, Foldable v, Traversable v)
 type Mat v s = v (v s) -- inner structure are rows
@@ -97,6 +97,9 @@ crossProductMatrix (V3 a1 a2 a3) = V3  (V3 zero (negate a3) a2)
 -- | Tensor product
 (⊗) :: Ring a => Linear v => v a -> v a -> Mat v a
 v1 ⊗ v2 = (⊙) <$> pure v1 <*> (pure <$> v2)
+
+identity :: Multiplicative a => Additive a => Lin v => Mat v a
+identity = diagonal one
 
 -- | 3d rotation around given axis
 rotation3d :: Ring a => Floating a => a -> V3 a -> Mat V3 a
