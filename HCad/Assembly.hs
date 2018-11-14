@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -14,22 +15,25 @@ module HCad.Assembly where
 
 import Algebra.Linear
 import Algebra.Classes
-import Prelude (Functor(..),error,Monad(..))
+import Prelude (Functor(..),error,Monad(..),Double,Int)
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
 import GHC.TypeLits
+import Control.Monad.State
 
-data Assembly a
-instance Functor Assembly
-instance Applicative Assembly
-instance Monad Assembly
-data Expr
-instance AbelianAdditive Expr
-instance Additive Expr
-instance Multiplicative Expr
-instance Group Expr
-instance Ring Expr
+import Data.LinearProgram.LinExpr
+
+type Var = Int
+type Expr = LinExpr Var Double
+
+newtype Assembly a = Assembly {fromAsm :: State Int a} deriving (Functor,Monad,Applicative)
+
+-- instance AbelianAdditive Expr
+-- instance Additive Expr
+-- instance Multiplicative Expr
+-- instance Group Expr
+-- instance Ring Expr
 
 constrain :: Expr -> Expr -> Assembly ()
 constrain = error "todo"

@@ -12,6 +12,8 @@ build-type:     Simple
 library
   build-depends: base < 666
                , gasp
+               , glpk-hs
+               , mtl
   exposed-modules: Algebra.Linear
                  , HCad.Assembly
 
