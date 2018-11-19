@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
@@ -16,7 +18,7 @@ module HCad.Part where
 
 import Algebra.Linear as Li
 import Algebra.Classes
-import Prelude (Functor(..),Floating(..),(.),Ord(..))
+import Prelude (Functor(..),Floating(..),(.),Ord(..),String)
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
@@ -24,9 +26,22 @@ import GHC.TypeLits
 
 data Part xs vec
   = Part {partVertices :: NamedVec xs vec
-         ,partNormals  :: NamedVec xs vec}
+         ,partNormals  :: NamedVec xs vec
+         ,partText :: String}
     deriving Functor
 
+type family (++) (a::[k]) (b::[k]) where
+  '[] ++ a = a
+  (x ': xs) ++ ys = x ': (xs ++ ys)
+
+infixr ++*
+(++*) :: NamedVec xs v -> NamedVec ys v -> NamedVec (xs ++ ys) v
+Nil ++* ys = ys
+(x :* xs) ++* ys = x :* xs ++* ys
+
+union :: Part xs v -> Part ys v -> Part (xs ++ ys) v
+union p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
+                   ,partNormals = partNormals p1 ++* partNormals p2}
 
 data NamedVec (fields::[Symbol]) vec where
   Nil :: NamedVec '[] vec
