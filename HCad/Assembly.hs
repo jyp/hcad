@@ -65,22 +65,3 @@ freeS = sequence (point freeV)
 --   return r
 
 
-
-data NamedVec (faces::[Symbol]) vec where
-  NilVec :: NamedVec '[] vec
-  ConsVec :: vec -> NamedVec xs vec -> NamedVec (x ': xs) vec
-
-deriving instance (Functor (NamedVec faces))
-deriving instance (Foldable (NamedVec faces))
-deriving instance (Traversable (NamedVec faces))
-
-class (∈) (x :: Symbol) (xs :: [Symbol]) where
-  getVertex :: NamedVec xs a -> a
-
-instance x ∈ (x ': xs) where
-  getVertex (ConsVec x _) = x
-
-instance x ∈ xs => x ∈ (y ': xs) where
-  getVertex (ConsVec _y xs) = getVertex @x xs
-
-

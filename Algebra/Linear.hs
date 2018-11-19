@@ -21,7 +21,7 @@
 module Algebra.Linear where
 
 import Algebra.Classes
-import Prelude (cos,sin,Floating(..),Functor(..),Show(..),Eq(..))
+import Prelude (cos,sin,Floating(..),Functor(..),Show(..),Eq(..),(.))
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
@@ -70,6 +70,12 @@ x ⊙ y = (*) <$> x <*> y
 
 dotProd :: Ring s => Linear v => v s -> v s -> s
 dotProd x y = add (x ⊙ y)
+
+sqNorm :: (Traversable v, Applicative v, Ring a, Floating a) => v a -> a
+sqNorm x = dotProd x x
+
+norm :: (Traversable v, Applicative v, Ring a, Floating a) => v a -> a
+norm = sqrt . sqNorm
 
 matVecMul :: Ring s => Linear v => v (v s) -> v s -> v s
 matVecMul m v = dotProd v <$> m
