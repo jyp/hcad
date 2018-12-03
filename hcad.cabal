@@ -12,9 +12,9 @@ build-type:     Simple
 library
   build-depends: base < 666
                , gasp
-               , glpk-hs
+               -- , glpk-hs
                , mtl
   exposed-modules: Algebra.Linear
-                 , HCad.Assembly
+                 -- , HCad.Assembly
 
   default-language:    Haskell2010

@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -18,16 +19,22 @@ module HCad.Part where
 
 import Algebra.Linear as Li
 import Algebra.Classes
-import Prelude (Functor(..),Floating(..),(.),Ord(..),String)
+import Prelude (Functor(..),Floating(..),(.),Ord(..),String,Show(..),Bool(..),error,Fractional(..))
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
 import GHC.TypeLits
+import Data.Monoid
+import Data.List
+
+data SCAD = SCAD {scadPrim :: String
+                 ,scadArgs :: [(String,String)]
+                 ,scadBody :: [SCAD]}
 
 data Part xs vec
   = Part {partVertices :: NamedVec xs vec
          ,partNormals  :: NamedVec xs vec
-         ,partText :: String}
+         ,partCode :: SCAD }
     deriving Functor
 
 type family (++) (a::[k]) (b::[k]) where
@@ -39,15 +46,26 @@ infixr ++*
 Nil ++* ys = ys
 (x :* xs) ++* ys = x :* xs ++* ys
 
-union :: Part xs v -> Part ys v -> Part (xs ++ ys) v
-union p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
-                   ,partNormals = partNormals p1 ++* partNormals p2}
-
 data NamedVec (fields::[Symbol]) vec where
   Nil :: NamedVec '[] vec
   (:*) :: vec -> NamedVec xs vec -> NamedVec (x ': xs) vec
+
 infixr :*
 
+-- class KnownLen xs where
+--   repet :: a -> NamedVec xs a
+
+-- instance KnownLen xs => Applicative (NamedVec xs) where
+--   pure = repet
+--   Nil <*> Nil = Nil
+--   (f :* fs) <*> (a :* as) = f a :* (fs <*> as)
+  
+-- instance (Additive vec, KnownLen xs) => Additive (NamedVec xs vec) where
+--   zero = repet zero
+--   v1 + v2 = (+) <$> v1 <*> v2
+-- instance (AbelianAdditive vec, KnownLen xs) => AbelianAdditive (NamedVec xs vec)
+-- instance Module s vec => Module s (NamedVec xs vec)
+  
 deriving instance (Functor (NamedVec faces))
 deriving instance (Foldable (NamedVec faces))
 deriving instance (Traversable (NamedVec faces))
@@ -67,33 +85,14 @@ getNormal = getField @x . partNormals
 getVertex :: forall x xs a. x ∈ xs => Part xs a -> a
 getVertex = getField @x . partVertices
 
-orient3dTo :: forall x xs a. Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
-orient3dTo x p@Part{..} = matVecMul r <$> p
-  where y = getField @x partNormals
-        v = x × y
-        c = dotProd x y
-        s = norm v
-        r = c *^ identity + s *^ crossProductMatrix v + (1-c) *^ (v ⊗ v)
+class KnownD v where
+  is3d :: Bool
 
-orient3d :: forall x y xs ys a. Ord a => Floating a => Division a => Ring a => x ∈ xs => y ∈ ys =>
-            Part xs (V3 a) -> Part ys (V3 a) -> Part ys (V3 a)
-orient3d p1 = orient3dTo @y (getNormal @x p1)
+-------------------------------------------
+-- Primitive ops
 
-buttTo :: forall x xs a v. Group (v a) => x ∈ xs => v a -> Part xs (v a) -> Part xs (v a)
-buttTo x p = HCad.Part.translate (x - y) p
-  where y = getVertex @x p
-
-butt :: forall x y xs ys a v. Group (v a) => x ∈ xs => y ∈ ys => Part xs (v a) -> Part ys (v a) -> Part ys (v a)
-butt p1 = buttTo @y (getVertex @x p1)
-
-translate :: Additive (v s) => v s -> Part xs (v s) -> Part xs (v s)
-translate v Part{..} = Part {partNormals = partNormals, partVertices = Li.translate v partVertices}
-
-scale :: (Module s (v s), Field s) => s -> Part xs (v s) -> Part xs (v s)
-scale v Part{..} = Part {partNormals = partNormals, partVertices = Li.scale v partVertices}
-
-box :: Ring a => V3 a -> Part '["left", "right", "front", "back", "bottom", "top"] (V3 a)
-box v = Part {partVertices = (v ⊙) <$> partNormals ,..}
+cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part '["left", "right", "front", "back", "bottom", "top"] (V3 a)
+cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
   where partNormals =
            V3 j o o :*
            V3 i o o :*
@@ -105,4 +104,99 @@ box v = Part {partVertices = (v ⊙) <$> partNormals ,..}
         i = one
         o = zero
         j = negate i
+        partCode = SCAD "cube" [("size","1"),("center","true")] []
 
+sphere :: Part '[] (V3 a)
+sphere = Part {partVertices = Nil, partNormals = Nil
+              ,partCode = SCAD "sphere" [("d","1")] []}
+
+square :: forall a. Module a a => Fractional a => Show a => Ring a => Part '["left", "right", "front", "back"] (V2 a)
+square = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
+  where partNormals =
+           V2 j o :*
+           V2 i o :*
+           V2 o j :*
+           V2 o i :*
+           Nil
+        i = one
+        o = zero
+        j = negate i
+        partCode = SCAD "square" [("size","1"),("center","true")] []
+
+circle :: Part '[] (V2 a)
+circle = Part {partVertices = Nil, partNormals = Nil
+              ,partCode = SCAD "circle" [("d","1")] []}
+
+-- TODO: polygon
+
+linearExtrude :: forall a xs. Module a a => Fractional a => Show a => a -> Part xs (V2 a) -> Part '["bottom","top"] (V3 a)
+linearExtrude height shape
+  = Part {partVertices = ((0.5 :: a) *^) <$> partNormals
+         ,partCode = SCAD "linear_extrude"
+           [("height",show height)
+           -- ,("twist",0)
+           -- ,("scale",)
+           ]
+           [partCode shape]
+         ,..}
+    where partNormals = V3 o o (negate one) :*
+                        V3 o o one :*
+                        Nil
+          o = zero
+
+
+union :: Part xs v -> Part ys v -> Part (xs ++ ys) v
+union p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
+                   ,partNormals = partNormals p1 ++* partNormals p2
+                   ,partCode = SCAD "union" [] [partCode p1,partCode p2]}
+
+
+
+------------------------------------------------
+-- Non-primitive ops
+-- | Ori
+orient3dTo :: forall x xs a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
+orient3dTo x p@Part{..} = matVecMul r <$> p
+  where y = getField @x partNormals
+        v = x × y
+        c = dotProd x y
+        s = norm v
+        r = c *^ identity + s *^ crossProductMatrix v + (1-c) *^ (v ⊗ v)
+
+orient3d :: forall x y xs ys a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => y ∈ ys =>
+            Part xs (V3 a) -> Part ys (V3 a) -> Part ys (V3 a)
+orient3d p1 = orient3dTo @y (getNormal @x p1)
+
+buttTo :: forall x xs a v. Show a => Foldable v => Group (v a) => x ∈ xs => v a -> Part xs (v a) -> Part xs (v a)
+buttTo x p = HCad.Part.translate (x - y) p
+  where y = getVertex @x p
+
+butt :: forall x y xs ys a v. Foldable v => Show a => Group (v a) => x ∈ xs => y ∈ ys => Part xs (v a) -> Part ys (v a) -> Part ys (v a)
+butt p1 = buttTo @y (getVertex @x p1)
+
+
+renderVec :: (Show a, Foldable t) => t a -> String
+renderVec v = "[" <> foldMap show v <> "]"
+
+translate :: forall (v :: * -> *) s xs. Foldable v => Show s => Additive (v s) => v s -> Part xs (v s) -> Part xs (v s)
+translate v Part{..} = Part {partNormals = partNormals
+                            ,partVertices = Li.translate v partVertices
+                            ,partCode = SCAD "translate" [("v",renderVec v)] [partCode]
+                            }
+
+scale :: (Applicative v,Module s (v s), Field s,Traversable v,Show s) => s -> Part xs (v s) -> Part xs (v s)
+scale s = scale' (pure s)
+
+scale' :: Traversable v => Applicative v => (Module s (v s), Field s,Show s) => v s -> Part xs (v s) -> Part xs (v s)
+scale' v Part{..} = Part {partNormals = partNormals
+                        ,partVertices = (v ⊙) <$> partVertices
+                        ,partCode = SCAD "scale" [("v",renderVec v)] [partCode] }
+
+renderCode :: SCAD -> [String]
+renderCode (SCAD "union" [] body) = concatMap renderCode body
+renderCode (SCAD fname args body) = [fname <>"(" <> (intercalate ", " [pname <> "=" <> arg
+                                                                      | (pname,arg) <- args]) <> ")" <> rbody]
+  where rbody = case concatMap renderCode body of
+          [] -> ""
+          [x] -> x
+          xs -> "{" <> mconcat ((<>";") <$> xs) <> "}"
