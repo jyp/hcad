@@ -22,7 +22,7 @@ module HCad.Part where
 import Algebra.Linear hiding (scale,translate)
 import qualified Algebra.Linear as Li
 import Algebra.Classes
-import Prelude (Functor(..),Floating(..),(.),Ord(..),String,Show(..),Bool(..),error,Fractional(..),Double)
+import Prelude (Functor(..),Floating(..),(.),($),Ord(..),String,Show(..),Bool(..),error,Fractional(..),Double)
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
@@ -85,6 +85,19 @@ instance {-# OVERLAPPING #-} x ∈ (x ': xs) where
 instance {-# OVERLAPPING #-} x ∈ xs => x ∈ (y ': xs) where
   getField (_y :* xs) = getField @x xs
 
+
+class (⊆) (xs :: [FieldName]) (ys :: [FieldName]) where
+  filterVec :: NamedVec ys a -> NamedVec xs a
+
+instance {-# OVERLAPPING #-} xs ⊆ ys => xs ⊆ (x ': ys) where
+  filterVec (_ :* xs) = filterVec xs
+
+instance {-# OVERLAPPING #-} xs ⊆ ys => (x ': xs) ⊆ (x ': ys) where
+  filterVec (x :* xs) = x :* filterVec xs
+
+instance {-# OVERLAPPING #-} '[] ⊆ '[] where
+  filterVec Nil = Nil
+
 getNormal :: forall x xs a. x ∈ xs => Part xs a -> a
 getNormal = getField @x . partNormals
 
@@ -110,10 +123,15 @@ nameVec Nil = Nil
 nameVec (a :* as) = (a :* nameVec @x as)
 
 
-namePart :: forall x xs vec. Part xs vec -> Part (MapCons x xs) vec
-namePart (Part {..}) = Part{partVertices = nameVec @x partVertices
+name :: forall x xs vec. Part xs vec -> Part (MapCons x xs) vec
+name (Part {..}) = Part{partVertices = nameVec @x partVertices
                            ,partNormals = nameVec @x partNormals
                            ,..}
+
+weaken :: ys ⊆ xs => Part xs vec -> Part ys vec
+weaken (Part {..}) = Part{partVertices = filterVec partVertices
+                         ,partNormals = filterVec partNormals
+                         ,..}
 
 cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back", "bottom", "top"]) (V3 a)
 cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
@@ -184,7 +202,7 @@ difference p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
 ------------------------------------------------
 
 at :: (Foldable v, Show s, Group (v s)) => v s -> Part xs (v s) -> Part xs (v s)
-at v = translate (negate v)
+at v = translate v
 
 
 ------------------------------------------------
@@ -203,13 +221,11 @@ orient3d :: forall x y xs ys a. Module a a => Ord a => Floating a => Division a 
             Part xs (V3 a) -> Part ys (V3 a) -> Part ys (V3 a)
 orient3d p1 = orient3dTo @y (getNormal @x p1)
 
-buttTo :: forall x xs a v. Show a => Foldable v => Group (v a) => x ∈ xs => v a -> Part xs (v a) -> Part xs (v a)
-buttTo x p = HCad.Part.translate (x - y) p
-  where y = getVertex @x p
+centering :: Show a => Foldable v => Group (v a) => (Part xs (v a) -> v a) -> Part xs (v a) -> Part xs (v a)
+centering getX p = translate (negate (getX p)) p
 
-butt :: forall x y xs ys a v. Foldable v => Show a => Group (v a) => x ∈ xs => y ∈ ys => Part xs (v a) -> Part ys (v a) -> Part ys (v a)
-butt p1 = buttTo @y (getVertex @x p1)
-
+-- butt :: forall x y xs ys a v. Foldable v => Show a => Group (v a) => x ∈ xs => y ∈ ys => Part xs (v a) -> Part ys (v a) -> Part ys (v a)
+-- butt p1 = buttTo @y (getVertex @x p1)
 
 translate :: forall (v :: Type -> Type) s xs. Foldable v => Show s => Additive (v s) => v s -> Part xs (v s) -> Part xs (v s)
 translate v Part{..} = Part {partNormals = partNormals
@@ -249,7 +265,13 @@ frontRight p = V2 right front
         V2 right _ = getVertex @'["right"] p
 
 
-lBeam size thickness = body -/ cutOut
+lBeam size thickness = body
+  -/ (name @"inner" $
+      weaken @'[ '["left"], '["back"]] $
+      at (frontRight body) $
+      centering frontRight $
+      scale innersize $
+      square
+     )
    where body = scale size square
-         cutOut = namePart @"inner" (at (frontRight body) (scale innersize square))
          innersize = size - thickness
