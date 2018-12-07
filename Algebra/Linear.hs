@@ -57,6 +57,9 @@ instance (Applicative f,Additive a) => Additive (Lin f a) where
   zero = pure zero
   x + y =  (+) <$> x <*> y
 instance (Applicative f,AbelianAdditive a) => AbelianAdditive (Lin f a) where
+instance (Applicative f,Group a) => Group (Lin f a) where
+  negate x = negate <$> x
+  x - y = (-) <$> x <*> y
 
 instance (Applicative f,Module s a) => Module s (Lin f a) where
   s *^ t = (s*^) <$> t

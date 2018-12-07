@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PolyKinds #-}
@@ -17,15 +19,17 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module HCad.Part where
 
-import Algebra.Linear as Li
+import Algebra.Linear hiding (scale,translate)
+import qualified Algebra.Linear as Li
 import Algebra.Classes
-import Prelude (Functor(..),Floating(..),(.),Ord(..),String,Show(..),Bool(..),error,Fractional(..))
+import Prelude (Functor(..),Floating(..),(.),Ord(..),String,Show(..),Bool(..),error,Fractional(..),Double)
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
 import GHC.TypeLits
 import Data.Monoid
 import Data.List
+import Data.Kind (Type)
 
 data SCAD = SCAD {scadPrim :: String
                  ,scadArgs :: [(String,String)]
@@ -46,7 +50,9 @@ infixr ++*
 Nil ++* ys = ys
 (x :* xs) ++* ys = x :* xs ++* ys
 
-data NamedVec (fields::[Symbol]) vec where
+type FieldName = [Symbol]
+
+data NamedVec (fields::[FieldName]) vec where
   Nil :: NamedVec '[] vec
   (:*) :: vec -> NamedVec xs vec -> NamedVec (x ': xs) vec
 
@@ -70,13 +76,13 @@ deriving instance (Functor (NamedVec faces))
 deriving instance (Foldable (NamedVec faces))
 deriving instance (Traversable (NamedVec faces))
 
-class (∈) (x :: Symbol) (xs :: [Symbol]) where
+class (∈) (x :: FieldName) (xs :: [FieldName]) where
   getField :: NamedVec xs a -> a
 
-instance x ∈ (x ': xs) where
+instance {-# OVERLAPPING #-} x ∈ (x ': xs) where
   getField (x :* _) = x
 
-instance x ∈ xs => x ∈ (y ': xs) where
+instance {-# OVERLAPPING #-} x ∈ xs => x ∈ (y ': xs) where
   getField (_y :* xs) = getField @x xs
 
 getNormal :: forall x xs a. x ∈ xs => Part xs a -> a
@@ -91,7 +97,25 @@ class KnownD v where
 -------------------------------------------
 -- Primitive ops
 
-cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part '["left", "right", "front", "back", "bottom", "top"] (V3 a)
+type family SimpleFields x where
+  SimpleFields '[]  = '[]
+  SimpleFields ( x ': xs)  = '[x] ': SimpleFields xs
+
+type family MapCons x xs where
+  MapCons _ '[] = '[]
+  MapCons x ( y ': ys) = ( (x ': y) ': MapCons x ys )
+
+nameVec :: forall x xs vec. NamedVec xs vec -> NamedVec (MapCons x xs) vec
+nameVec Nil = Nil
+nameVec (a :* as) = (a :* nameVec @x as)
+
+
+namePart :: forall x xs vec. Part xs vec -> Part (MapCons x xs) vec
+namePart (Part {..}) = Part{partVertices = nameVec @x partVertices
+                           ,partNormals = nameVec @x partNormals
+                           ,..}
+
+cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back", "bottom", "top"]) (V3 a)
 cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
   where partNormals =
            V3 j o o :*
@@ -110,7 +134,7 @@ sphere :: Part '[] (V3 a)
 sphere = Part {partVertices = Nil, partNormals = Nil
               ,partCode = SCAD "sphere" [("d","1")] []}
 
-square :: forall a. Module a a => Fractional a => Show a => Ring a => Part '["left", "right", "front", "back"] (V2 a)
+square :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back"]) (V2 a)
 square = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
   where partNormals =
            V2 j o :*
@@ -129,7 +153,7 @@ circle = Part {partVertices = Nil, partNormals = Nil
 
 -- TODO: polygon
 
-linearExtrude :: forall a xs. Module a a => Fractional a => Show a => a -> Part xs (V2 a) -> Part '["bottom","top"] (V3 a)
+linearExtrude :: forall a xs. Module a a => Fractional a => Show a => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"]) (V3 a)
 linearExtrude height shape
   = Part {partVertices = ((0.5 :: a) *^) <$> partNormals
          ,partCode = SCAD "linear_extrude"
@@ -150,11 +174,23 @@ union p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                    ,partNormals = partNormals p1 ++* partNormals p2
                    ,partCode = SCAD "union" [] [partCode p1,partCode p2]}
 
+difference, (-/) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
+difference p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
+                   ,partNormals = partNormals p1 ++* partNormals p2
+                   ,partCode = SCAD "difference" [] [partCode p1,partCode p2]}
+
+
+(-/) = difference
+------------------------------------------------
+
+at :: (Foldable v, Show s, Group (v s)) => v s -> Part xs (v s) -> Part xs (v s)
+at v = translate (negate v)
 
 
 ------------------------------------------------
 -- Non-primitive ops
--- | Ori
+
+
 orient3dTo :: forall x xs a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
 orient3dTo x p@Part{..} = matVecMul r <$> p
   where y = getField @x partNormals
@@ -175,10 +211,7 @@ butt :: forall x y xs ys a v. Foldable v => Show a => Group (v a) => x ∈ xs =>
 butt p1 = buttTo @y (getVertex @x p1)
 
 
-renderVec :: (Show a, Foldable t) => t a -> String
-renderVec v = "[" <> foldMap show v <> "]"
-
-translate :: forall (v :: * -> *) s xs. Foldable v => Show s => Additive (v s) => v s -> Part xs (v s) -> Part xs (v s)
+translate :: forall (v :: Type -> Type) s xs. Foldable v => Show s => Additive (v s) => v s -> Part xs (v s) -> Part xs (v s)
 translate v Part{..} = Part {partNormals = partNormals
                             ,partVertices = Li.translate v partVertices
                             ,partCode = SCAD "translate" [("v",renderVec v)] [partCode]
@@ -192,6 +225,12 @@ scale' v Part{..} = Part {partNormals = partNormals
                         ,partVertices = (v ⊙) <$> partVertices
                         ,partCode = SCAD "scale" [("v",renderVec v)] [partCode] }
 
+-------------------------------------
+-- Rendering 
+
+renderVec :: (Show a, Foldable t) => t a -> String
+renderVec v = "[" <> foldMap show v <> "]"
+
 renderCode :: SCAD -> [String]
 renderCode (SCAD "union" [] body) = concatMap renderCode body
 renderCode (SCAD fname args body) = [fname <>"(" <> (intercalate ", " [pname <> "=" <> arg
@@ -200,3 +239,17 @@ renderCode (SCAD fname args body) = [fname <>"(" <> (intercalate ", " [pname <> 
           [] -> ""
           [x] -> x
           xs -> "{" <> mconcat ((<>";") <$> xs) <> "}"
+
+-----------------
+-- Examples
+
+frontRight :: ('["front"] ∈ xs, '["right"] ∈ xs) => Part xs (V2 a) -> V2 a
+frontRight p = V2 right front
+  where V2 _ front = getVertex @'["front"] p
+        V2 right _ = getVertex @'["right"] p
+
+
+lBeam size thickness = body -/ cutOut
+   where body = scale size square
+         cutOut = namePart @"inner" (at (frontRight body) (scale innersize square))
+         innersize = size - thickness
