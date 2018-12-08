@@ -69,12 +69,6 @@ class (Applicative v, Traversable v) => IsMatrix v where
 
 type Mat v s = v (v s) -- inner structures are rows
 
-translate :: Additive (v s) => Functor t => v s -> t (v s) -> t (v s)
-translate v t = (v +) <$> t
-
-scale :: VectorSpace s (v s) => Functor t => s -> t (v s) -> t (v s)
-scale s t = (s *^) <$> t
-
 (⊙) :: Multiplicative s => IsLinear v => v s -> v s -> v s
 x ⊙ y = (*) <$> x <*> y
 

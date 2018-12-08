@@ -22,13 +22,10 @@ module HCad.Part where
 import Algebra.Linear hiding (scale,translate)
 import qualified Algebra.Linear as Li
 import Algebra.Classes
-import Prelude (Functor(..),Floating(..),(.),($),Ord(..),String,Show(..),Bool(..),error,Fractional(..),Double)
-import Control.Applicative
+import Prelude hiding (Num(..))
 import Data.Foldable
-import Data.Traversable
 import GHC.TypeLits
-import Data.Monoid
-import Data.List
+import Data.List hiding (union)
 import Data.Kind (Type)
 
 data SCAD = SCAD {scadPrim :: String
@@ -133,6 +130,10 @@ weaken (Part {..}) = Part{partVertices = filterVec partVertices
                          ,partNormals = filterVec partNormals
                          ,..}
 
+
+forget :: ('[] ⊆ xs) => Part xs vec -> Part '[] vec
+forget = weaken
+
 cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back", "bottom", "top"]) (V3 a)
 cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
   where partNormals =
@@ -165,45 +166,64 @@ square = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
         j = negate i
         partCode = SCAD "square" [("size","1"),("center","true")] []
 
+rectangle sz = scale' sz  square
+
 circle :: Part '[] (V2 a)
 circle = Part {partVertices = Nil, partNormals = Nil
               ,partCode = SCAD "circle" [("d","1")] []}
 
 -- TODO: polygon
 
-linearExtrude :: forall a xs. Module a a => Fractional a => Show a => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"]) (V3 a)
-linearExtrude height shape
-  = Part {partVertices = ((0.5 :: a) *^) <$> partNormals
+linearExtrude :: forall a xs. Module a a => Fractional a => Show a
+              => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"] ++ xs) (V3 a)
+linearExtrude height Part{..}
+  = Part {partVertices = (((0.5 :: a) *^) <$> botTopNormals) ++* (z0 <$> partVertices)
+         ,partNormals = botTopNormals ++* (z0 <$> partNormals)
          ,partCode = SCAD "linear_extrude"
-           [("height",show height)
-           -- ,("twist",0)
-           -- ,("scale",)
-           ]
-           [partCode shape]
-         ,..}
-    where partNormals = V3 o o (negate one) :*
-                        V3 o o one :*
-                        Nil
+                     [("height",show height)
+                     -- ,("twist",0)
+                     -- ,("scale",)
+                     ]
+                     [partCode]
+         }
+    where botTopNormals = V3 o o (negate one) :*
+                          V3 o o one :*
+                          Nil
           o = zero
+          z0 (Lin (V2' x y)) = (V3 x y o)
 
 
-union :: Part xs v -> Part ys v -> Part (xs ++ ys) v
+union,(/+) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
 union p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                    ,partNormals = partNormals p1 ++* partNormals p2
                    ,partCode = SCAD "union" [] [partCode p1,partCode p2]}
+(/+) = union
 
-difference, (-/) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
+difference, (/-) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
 difference p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                    ,partNormals = partNormals p1 ++* partNormals p2
                    ,partCode = SCAD "difference" [] [partCode p1,partCode p2]}
 
 
-(-/) = difference
+(/-) = difference
 ------------------------------------------------
 
 at :: (Foldable v, Show s, Group (v s)) => v s -> Part xs (v s) -> Part xs (v s)
 at v = translate v
 
+data PartAndLoc ys xs vec = PartAndLoc (Part ys vec -> Part xs vec)
+
+(/@) :: Part xs (v s) -> (PartAndLoc xs zs (v s)) -> Part zs (v s)
+p /@ (PartAndLoc f) = f p
+infixl 8 /@
+
+(@+) :: (Foldable v, Show s, Group (v s)) => (Part ys (v s) -> (v s)) -> Part xs (v s) -> PartAndLoc ys (ys ++ xs) (v s)
+f @+ p = PartAndLoc (\q -> q /+ at (f q) p)
+infixl 9 @+
+
+(@-) :: (Foldable v, Show s, Group (v s)) => (Part ys (v s) -> (v s)) -> Part xs (v s) -> PartAndLoc ys (ys ++ xs) (v s)
+f @- p = PartAndLoc (\q -> q /- at (f q) p)
+infixl 9 @-
 
 ------------------------------------------------
 -- Non-primitive ops
@@ -224,12 +244,9 @@ orient3d p1 = orient3dTo @y (getNormal @x p1)
 centering :: Show a => Foldable v => Group (v a) => (Part xs (v a) -> v a) -> Part xs (v a) -> Part xs (v a)
 centering getX p = translate (negate (getX p)) p
 
--- butt :: forall x y xs ys a v. Foldable v => Show a => Group (v a) => x ∈ xs => y ∈ ys => Part xs (v a) -> Part ys (v a) -> Part ys (v a)
--- butt p1 = buttTo @y (getVertex @x p1)
-
 translate :: forall (v :: Type -> Type) s xs. Foldable v => Show s => Additive (v s) => v s -> Part xs (v s) -> Part xs (v s)
 translate v Part{..} = Part {partNormals = partNormals
-                            ,partVertices = Li.translate v partVertices
+                            ,partVertices = (v +) <$> partVertices
                             ,partCode = SCAD "translate" [("v",renderVec v)] [partCode]
                             }
 
@@ -245,7 +262,7 @@ scale' v Part{..} = Part {partNormals = partNormals
 -- Rendering 
 
 renderVec :: (Show a, Foldable t) => t a -> String
-renderVec v = "[" <> foldMap show v <> "]"
+renderVec v = "[" <> intercalate ", " (map show (toList v)) <> "]"
 
 renderCode :: SCAD -> [String]
 renderCode (SCAD "union" [] body) = concatMap renderCode body
@@ -256,22 +273,39 @@ renderCode (SCAD fname args body) = [fname <>"(" <> (intercalate ", " [pname <> 
           [x] -> x
           xs -> "{" <> mconcat ((<>";") <$> xs) <> "}"
 
------------------
--- Examples
+south :: '["front"] ∈ xs => Part xs (V2 a) -> V2 a
+south = getVertex @'["front"]
 
-frontRight :: ('["front"] ∈ xs, '["right"] ∈ xs) => Part xs (V2 a) -> V2 a
-frontRight p = V2 right front
-  where V2 _ front = getVertex @'["front"] p
-        V2 right _ = getVertex @'["right"] p
+north :: '["back"] ∈ xs => Part xs (V2 a) -> V2 a
+north = getVertex @'["back"]
+
+west :: '["left"] ∈ xs => Part xs (V2 a) -> V2 a
+west = getVertex @'["left"]
+
+east :: '["right"] ∈ xs => Part xs (V2 a) -> V2 a
+east = getVertex @'["right"]
+
+yxPoint :: (t -> Lin V2' a) -> (t -> Lin V2' a) -> t -> Lin V2' a
+yxPoint f g p = V2 x y
+  where V2 _ y = f p
+        V2 x _ = g p
+
+type East = "right"
+type West = "left"
+type North = "back"
+type South = "front"
+
+southWest :: ('["front"] ∈ xs, '["left"] ∈ xs) => Part xs (V2 a) -> V2 a
+southWest = yxPoint south west
+
+southEast :: ('[South] ∈ xs, '[East] ∈ xs) => Part xs (V2 a) -> V2 a
+southEast = yxPoint south east
+
+northEast :: ('[North] ∈ xs, '[East] ∈ xs) => Part xs (V2 a) -> V2 a
+northEast = yxPoint north east
+
+northWest :: ('[North] ∈ xs, '[West] ∈ xs) => Part xs (V2 a) -> V2 a
+northWest = yxPoint north west
 
 
-lBeam size thickness = body
-  -/ (name @"inner" $
-      weaken @'[ '["left"], '["back"]] $
-      at (frontRight body) $
-      centering frontRight $
-      scale innersize $
-      square
-     )
-   where body = scale size square
-         innersize = size - thickness
+
