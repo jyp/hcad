@@ -81,6 +81,10 @@ sqNorm x = dotProd x x
 norm :: (Traversable v, Applicative v, Ring a, Floating a) => v a -> a
 norm = sqrt . sqNorm
 
+normalize :: (Module a (v a), Division a, Traversable v, Applicative v, Floating a)
+          => v a -> v a
+normalize v = (1 / sqNorm v) *^ v
+
 matVecMul :: Ring s => IsLinear v => v (v s) -> v s -> v s
 matVecMul m v = dotProd v <$> m
 
@@ -116,6 +120,15 @@ rotation3d :: Module a a => Floating a => a -> V3 a -> Mat V3 a
 rotation3d θ u = cos θ *^ identity +
                  sin θ *^ crossProductMatrix u +
                  (1 - cos θ) *^ (u ⊗ u)
+
+rotationFromTo :: (Floating a, Module a a)
+               => V3 a -> V3 a -> Mat V3 a
+rotationFromTo from to = c *^ identity + s *^ crossProductMatrix v + (1-c) *^ (v ⊗ v)
+  where y = to
+        x = from
+        v = x × y
+        c = dotProd x y
+        s = norm v
 
 transpose :: IsLinear v => Mat v a -> Mat v a
 transpose = sequenceA

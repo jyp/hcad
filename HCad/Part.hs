@@ -19,7 +19,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module HCad.Part where
 
-import Algebra.Linear hiding (scale,translate)
+import Algebra.Linear hiding (scale,translate,transform)
 import qualified Algebra.Linear as Li
 import Algebra.Classes
 import Prelude hiding (Num(..))
@@ -154,7 +154,7 @@ cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
 
 sphere :: Part '[] (V3 a)
 sphere = Part {partVertices = Nil, partNormals = Nil
-              ,partCode = SCAD "sphere" [("d","1")] []}
+              ,partCode = SCAD "sphere" [("d","1"),(("$fn","20"))] []}
 
 square :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back"]) (V2 a)
 square = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
@@ -173,18 +173,19 @@ rectangle sz = scale' sz  square
 
 circle :: Part '[] (V2 a)
 circle = Part {partVertices = Nil, partNormals = Nil
-              ,partCode = SCAD "circle" [("d","1")] []}
+              ,partCode = SCAD "circle" [("d","1"),("$fn","20")] []}
 
 -- TODO: polygon
 
 linearExtrude :: forall a xs. Module a a => Fractional a => Show a
               => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"] ++ xs) (V3 a)
 linearExtrude height Part{..}
-  = Part {partVertices = (((0.5 :: a) *^) <$> botTopNormals) ++* (z0 <$> partVertices)
+  = Part {partVertices = (((0.5 * height) *^) <$> botTopNormals) ++* (z0 <$> partVertices)
          ,partNormals = botTopNormals ++* (z0 <$> partNormals)
          ,partCode = SCAD "linear_extrude"
                      [("height",show height)
                      ,("center","true")
+                     ,("convexity","10")
                      -- ,("twist",0)
                      -- ,("scale",)
                      ]
@@ -218,6 +219,12 @@ translate v Part{..} = Part {partNormals = partNormals
                             ,partVertices = (v +) <$> partVertices
                             ,partCode = SCAD "translate" [("v",renderVec v)] [partCode]
                             }
+transform :: Show s => Floating s => Division s => Module s s => Ring s => Mat V3 s -> Part xs (V3 s) -> Part xs (V3 s)
+transform m Part{..} = Part {partVertices = Li.transform m partVertices
+                            ,partNormals = Li.normalize . matVecMul m <$> partVertices
+                            ,partCode = SCAD "multmatrix" [("m",m')] [partCode]}
+  where m' = showL (toList (showL .  toList . (fmap show) <$> m) ++ ["[0,0,0,1]"])
+          
 scale' :: Traversable v => Applicative v => (Module s (v s), Field s,Show s) => v s -> Part xs (v s) -> Part xs (v s)
 scale' v Part{..} = Part {partNormals = partNormals
                         ,partVertices = (v ⊙) <$> partVertices
@@ -258,22 +265,27 @@ scale s = scale' (pure s)
 pocket :: Show a => Fractional a => Module a a
        => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
 pocket depth shape body = body /- forget negative  where
-  negative = linearExtrude depth shape
+  negative = translate (V3 0 0 (epsilon - 0.5 * depth)) (linearExtrude (depth+2*epsilon) shape)
+  epsilon = 0.05
 
--- on :: (Part xs (V3 a) -> Part ys (V3 a)) -> (Part xs (V3 a) -> Part ys (V3 a))
--- on = _
+on :: Division a => Module a a => Floating a => Group a => Additive a => Show a
+   => RelLoc xs (V3 a) -> (Part xs (V3 a) -> Part ys (V3 a)) -> (Part xs (V3 a) -> Part ys (V3 a))
+on relLoc f body = translate locPoint $ transform (Li.transpose normUp) $ f $ transform normUp $ translate (negate locPoint) $ body
+  where Loc{..} = relLoc body
+        normUp = rotationFromTo locNormal (V3 o o 1)
+        o = zero
 
-orient3dTo :: forall x xs a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
-orient3dTo x p@Part{..} = matVecMul r <$> p
-  where y = getField @x partNormals
-        v = x × y
-        c = dotProd x y
-        s = norm v
-        r = c *^ identity + s *^ crossProductMatrix v + (1-c) *^ (v ⊗ v)
+-- at :: (Foldable v, Show s, Group (v s)) => (RelLoc xs (v s)) -> (Part xs (v s) -> Part ys (v s)) -> (Part xs (v s) -> Part ys (v s))
+-- at relLoc f body = (translate loc . f . translate (negate loc)) body where
+--   loc = locPoint (relLoc body)
 
-orient3d :: forall x y xs ys a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => y ∈ ys =>
-            Part xs (V3 a) -> Part ys (V3 a) -> Part ys (V3 a)
-orient3d p1 = orient3dTo @y (getNormal @x p1)
+-- orient3dTo :: forall x xs a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
+-- orient3dTo x p@Part{..} = matVecMul r <$> p
+--   where y = getField @x partNormals
+--         v = x × y
+--         c = dotProd x y
+--         s = norm v
+--         r = c *^ identity + s *^ crossProductMatrix v + (1-c) *^ (v ⊗ v)
 
 centering :: Show a => Foldable v => Group (v a) => RelLoc xs (v a) -> Part xs (v a) -> Part xs (v a)
 centering getX p = translate (negate (locPoint (getX p))) p
@@ -283,10 +295,10 @@ centering getX p = translate (negate (locPoint (getX p))) p
 --------------------------------------
 -- Locations
 
-south :: '["front"] ∈ xs => RelLoc xs (V2 a); south = getLoc @'["front"]
-north :: '["back"] ∈ xs => RelLoc xs (V2 a); north = getLoc @'["back"]
-west  :: '["left"] ∈ xs => RelLoc xs (V2 a); west = getLoc @'["left"]
-east  :: '["right"] ∈ xs => RelLoc xs (V2 a); east = getLoc @'["right"]
+south :: '["front"] ∈ xs => RelLoc xs (v a); south = getLoc @'["front"]
+north :: '["back"] ∈ xs => RelLoc xs (v a); north = getLoc @'["back"]
+west  :: '["left"] ∈ xs => RelLoc xs (v a); west = getLoc @'["left"]
+east  :: '["right"] ∈ xs => RelLoc xs (v a); east = getLoc @'["right"]
 
 yxPoint :: V2 a -> V2 a -> V2 a
 yxPoint (Lin (V2' _ y)) (Lin (V2' x _)) = V2 x y
@@ -313,7 +325,11 @@ northWest :: ('[North] ∈ xs, '[West] ∈ xs) => RelLoc xs (V2 a); northWest = 
 -- Rendering
 
 renderVec :: (Show a, Foldable t) => t a -> String
-renderVec v = "[" <> intercalate ", " (map show (toList v)) <> "]"
+renderVec v = showL (map show (toList v))
+
+showL :: [String] -> String
+showL v = "[" <> intercalate ", " v <> "]"
+
 
 
 renderCode :: SCAD -> [String]
