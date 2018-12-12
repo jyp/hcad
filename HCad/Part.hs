@@ -22,7 +22,7 @@ module HCad.Part where
 import Algebra.Linear hiding (scale,translate,transform)
 import qualified Algebra.Linear as Li
 import Algebra.Classes
-import Prelude hiding (Num(..))
+import Prelude hiding (Num(..),(/))
 import Data.Foldable
 import GHC.TypeLits
 import Data.List hiding (union)
@@ -175,7 +175,19 @@ circle :: Part '[] (V2 a)
 circle = Part {partVertices = Nil, partNormals = Nil
               ,partCode = SCAD "circle" [("d","1"),("$fn","20")] []}
 
--- TODO: polygon
+polygon :: Show a => [V2 a] -> Part '[] (V2 a)
+polygon points
+  = Part {partVertices = Nil
+         ,partNormals = Nil
+         ,partCode = SCAD "polygon" [("points",showL (map renderVec points))] []}
+
+
+regularPolygon :: Division a => Floating a => Show a => Int -> Part '[] (V2 a)
+regularPolygon order = polygon (coords)
+  where coords=[V2 (cos th) (sin th)
+               | i <- [0..order-1],
+                 let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
+
 
 linearExtrude :: forall a xs. Module a a => Fractional a => Show a
               => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"] ++ xs) (V3 a)
@@ -200,15 +212,26 @@ linearExtrude height Part{..}
 
 (/+) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
 (/+) p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
-                   ,partNormals = partNormals p1 ++* partNormals p2
-                   ,partCode = SCAD "union" [] [partCode p1,partCode p2]}
+                  ,partNormals = partNormals p1 ++* partNormals p2
+                  ,partCode = SCAD "union" [] [partCode p1,partCode p2]}
 union :: Part ys v -> Part xs v -> Part (xs ++ ys) v
 union = flip (/+)
+
+unions :: [Part xs v] -> Part '[] v
+unions ps = Part {partVertices = Nil
+                 ,partNormals = Nil
+                 ,partCode = SCAD "union" [] (map partCode ps)}
+
+intersection :: Part ys v -> Part xs v -> Part (xs ++ ys) v
+intersection p2 p1 = Part {partVertices = partVertices p1 ++* partVertices p2
+                          ,partNormals = partNormals p1 ++* partNormals p2
+                          ,partCode = SCAD "intersection" [] [partCode p1,partCode p2]}
 
 (/-) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
 (/-) p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                    ,partNormals = partNormals p1 ++* partNormals p2
                    ,partCode = SCAD "difference" [] [partCode p1,partCode p2]}
+
 
 
 difference :: Part ys v -> Part xs v -> Part (xs ++ ys) v
@@ -337,13 +360,16 @@ renderCode (SCAD fname args body)
   | fname == "union" = rbody
   | otherwise = (fname <>"(" <> (intercalate ", " [pname <> "=" <> arg
                                                                       | (pname,arg) <- args]) <> ")") `app` rbody
-  where rbody = case concatMap renderCode body of
-          [] -> [""]
-          [x] -> [x]
-          xs -> "{" : ((\x -> (" "<> x <>";")) <$> xs) ++ "}" : []
+  where rbody = case body of
+          [] -> []
+          [x] -> renderCode x
+          xs -> "{" : fmap indent (concatMap (semicolon . renderCode) xs) ++ "}" : []
 
+        indent xs = " " ++ xs
+        semicolon [] = error "semicolon: empty"
+        semicolon xs = init xs ++ [last xs ++ ";"]
         x `app` (y : ys) = (x<>y) : ys
-        app _ [] = error "invariant broken"
+        app x [] = [x]
 
 
 
