@@ -209,18 +209,25 @@ linearExtrude height Part{..}
           o = zero
           z0 (Lin (V2' x y)) = (V3 x y o)
 
+flattenUnions :: [SCAD] -> [SCAD]
+flattenUnions (SCAD "union" [] xs:ys) = xs ++ flattenUnions ys
+flattenUnions (x:xs) = x:flattenUnions xs
+flattenUnions [] = []
+
+mkUnion :: [SCAD] -> SCAD
+mkUnion xs = SCAD "union" [] (flattenUnions xs)
 
 (/+) :: Part xs v -> Part ys v -> Part (xs ++ ys) v
 (/+) p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                   ,partNormals = partNormals p1 ++* partNormals p2
-                  ,partCode = SCAD "union" [] [partCode p1,partCode p2]}
+                  ,partCode = mkUnion [partCode p1,partCode p2]}
 union :: Part ys v -> Part xs v -> Part (xs ++ ys) v
 union = flip (/+)
 
 unions :: [Part xs v] -> Part '[] v
 unions ps = Part {partVertices = Nil
                  ,partNormals = Nil
-                 ,partCode = SCAD "union" [] (map partCode ps)}
+                 ,partCode = mkUnion (map partCode ps)}
 
 intersection :: Part ys v -> Part xs v -> Part (xs ++ ys) v
 intersection p2 p1 = Part {partVertices = partVertices p1 ++* partVertices p2
@@ -357,7 +364,7 @@ showL v = "[" <> intercalate ", " v <> "]"
 
 renderCode :: SCAD -> [String]
 renderCode (SCAD fname args body)
-  | fname == "union" = rbody
+  -- | fname == "union" = rbody
   | otherwise = (fname <>"(" <> (intercalate ", " [pname <> "=" <> arg
                                                                       | (pname,arg) <- args]) <> ")") `app` rbody
   where rbody = case body of
