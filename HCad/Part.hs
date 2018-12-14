@@ -251,9 +251,9 @@ translate v Part{..} = Part {partNormals = partNormals
                             }
 transform :: Show s => Floating s => Division s => Module s s => Ring s => Mat V3 s -> Part xs (V3 s) -> Part xs (V3 s)
 transform m Part{..} = Part {partVertices = Li.transform m partVertices
-                            ,partNormals = Li.normalize . matVecMul m <$> partVertices
+                            ,partNormals = Li.normalize <$> Li.transform m partNormals
                             ,partCode = SCAD "multmatrix" [("m",m')] [partCode]}
-  where m' = showL (toList (showL .  toList . (fmap show) <$> m) ++ ["[0,0,0,1]"])
+  where m' = showL (toList (showL . ( ++ ["0"]) . toList . (fmap show) <$> m) ++ ["[0,0,0,1]"])
           
 scale' :: Traversable v => Applicative v => (Module s (v s), Field s,Show s) => v s -> Part xs (v s) -> Part xs (v s)
 scale' v Part{..} = Part {partNormals = partNormals
@@ -300,14 +300,11 @@ pocket depth shape body = body /- forget negative  where
 
 on :: Division a => Module a a => Floating a => Group a => Additive a => Show a
    => RelLoc xs (V3 a) -> (Part xs (V3 a) -> Part ys (V3 a)) -> (Part xs (V3 a) -> Part ys (V3 a))
-on relLoc f body = translate locPoint $ transform (Li.transpose normUp) $ f $ transform normUp $ translate (negate locPoint) $ body
+on relLoc f body = translate locPoint $ transform normUp' $ f $ transform normUp $ translate (negate locPoint) $ body
   where Loc{..} = relLoc body
         normUp = rotationFromTo locNormal (V3 o o 1)
+        normUp' = Li.transpose normUp
         o = zero
-
--- at :: (Foldable v, Show s, Group (v s)) => (RelLoc xs (v s)) -> (Part xs (v s) -> Part ys (v s)) -> (Part xs (v s) -> Part ys (v s))
--- at relLoc f body = (translate loc . f . translate (negate loc)) body where
---   loc = locPoint (relLoc body)
 
 -- orient3dTo :: forall x xs a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
 -- orient3dTo x p@Part{..} = matVecMul r <$> p
