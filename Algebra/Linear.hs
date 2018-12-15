@@ -33,6 +33,8 @@ data V2' a = V2' a a deriving (Functor,Foldable,Traversable,Show,Eq)
 data V3' a = V3' a a a deriving (Functor,Foldable,Traversable,Show,Eq)
 newtype Lin f a = Lin (f a) deriving (Functor,Foldable,Traversable,Show,Eq,Applicative)
 type IsLinear v = (Applicative v, Foldable v, Traversable v)
+type LinearSpace v a = (IsLinear v, Ring' a, Module a (v a), Group (v a))
+type Ring' a = Module a a
 
 type V3 = Lin V3'
 type V2 = Lin V2'
@@ -72,8 +74,10 @@ type Mat v s = v (v s) -- inner structures are rows
 (⊙) :: Multiplicative s => IsLinear v => v s -> v s -> v s
 x ⊙ y = (*) <$> x <*> y
 
-dotProd :: Ring s => IsLinear v => v s -> v s -> s
+(·), dotProd :: Ring s => IsLinear v => v s -> v s -> s
 dotProd x y = add (x ⊙ y)
+
+(·) = dotProd
 
 sqNorm :: (Traversable v, Applicative v, Ring a, Floating a) => v a -> a
 sqNorm x = dotProd x x
@@ -116,7 +120,7 @@ identity :: Multiplicative a => Additive a => IsMatrix v => Mat v a
 identity = diagonal one
 
 -- | 3d rotation around given axis
-rotation3d :: Module a a => Floating a => a -> V3 a -> Mat V3 a
+rotation3d :: Ring' a => Floating a => a -> V3 a -> Mat V3 a
 rotation3d θ u = cos θ *^ identity +
                  sin θ *^ crossProductMatrix u +
                  (1 - cos θ) *^ (u ⊗ u)
