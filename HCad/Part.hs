@@ -137,7 +137,7 @@ weaken (Part {..}) = Part{partVertices = filterVec partVertices
 forget :: Part xs vec -> Part '[] vec
 forget Part{..} = Part {partNormals=Nil,partVertices=Nil,..}
 
-cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back", "bottom", "top"]) (V3 a)
+cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", East, "front", "back", "bottom", "top"]) (V3 a)
 cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
   where partNormals =
            V3 j o o :*
@@ -156,9 +156,11 @@ sphere :: Part '[] (V3 a)
 sphere = Part {partVertices = Nil, partNormals = Nil
               ,partCode = SCAD "sphere" [("d","1"),(("$fn","20"))] []}
 
-square :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", "right", "front", "back"]) (V2 a)
-square = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
-  where partNormals =
+square :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["center", "left", East, "front", "back"]) (V2 a)
+square = Part {partVertices = zero :* (((0.5 :: a) *^) <$> corners)
+              ,partNormals = V2 o j :* corners
+              ,partCode = SCAD "square" [("size","1"),("center","true")] []}
+  where corners =
            V2 j o :*
            V2 i o :*
            V2 o j :*
@@ -167,7 +169,6 @@ square = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
         i = one
         o = zero
         j = negate i
-        partCode = SCAD "square" [("size","1"),("center","true")] []
 
 rectangle sz = scale' sz  square
 
@@ -263,11 +264,25 @@ scale' v Part{..} = Part {partNormals = partNormals
 ------------------------------------------------
 
 data Loc v = Loc {locPoint :: v, locNormal :: v}
+
+
+origin :: Ring a => Loc (V3 a)
+origin = Loc {locPoint = zero, locNormal = V3 zero zero one}
+
+
 type RelLoc xs v = Part xs v -> Loc v
 
 at :: (Foldable v, Show s, Group (v s)) => (RelLoc xs (v s)) -> (Part xs (v s) -> Part ys (v s)) -> (Part xs (v s) -> Part ys (v s))
 at relLoc f body = (translate loc . f . translate (negate loc)) body where
   loc = locPoint (relLoc body)
+
+atXY :: (Show s, Division s, Module s s) =>
+              (Part xs (Lin V3' s) -> Loc (Lin V3' s))
+              -> (Part xs (Lin V3' s) -> Part ys (Lin V3' s))
+              -> Part xs (Lin V3' s)
+              -> Part ys (Lin V3' s)
+atXY f = at (projectOn origin . f)
+
 
 data PartAndLoc ys xs vec = PartAndLoc (Part ys vec -> Part xs vec)
 
@@ -325,8 +340,17 @@ centering getX p = translate (negate (locPoint (getX p))) p
 south :: '["front"] ∈ xs => RelLoc xs (v a); south = getLoc @'["front"]
 north :: '["back"] ∈ xs => RelLoc xs (v a); north = getLoc @'["back"]
 west  :: '["left"] ∈ xs => RelLoc xs (v a); west = getLoc @'["left"]
-east  :: '["right"] ∈ xs => RelLoc xs (v a); east = getLoc @'["right"]
+east  :: '[East] ∈ xs => RelLoc xs (v a); east = getLoc @'[East]
 
+
+projectOn :: (Division scalar, Applicative v, Traversable v, Module scalar (v scalar), Group (v scalar))
+          => Loc (v scalar) -> Loc (v scalar) -> Loc (v scalar)
+projectOn Loc {locNormal = planeNormal
+              , locPoint = planeOrigin}
+          Loc {..} = Loc {locPoint = position, locNormal = locNormal}
+ where θ = (planeOrigin - locPoint) · planeNormal
+       position = θ *^ planeNormal + locPoint
+       -- equation : (position - planeOrigin) · planeNormal = 0
 yxPoint :: V2 a -> V2 a -> V2 a
 yxPoint (Lin (V2' _ y)) (Lin (V2' x _)) = V2 x y
 
@@ -340,12 +364,13 @@ type East = "right"
 type West = "left"
 type North = "back"
 type South = "front"
+type Zenith = "top"
+type Nadir = "bottom"
 
-southWest :: ('[South] ∈ xs, '[West] ∈ xs) => RelLoc xs (V2 a); southWest = yxLoc south west
-southEast :: ('[South] ∈ xs, '[East] ∈ xs) => RelLoc xs (V2 a); southEast = yxLoc south east
-northEast :: ('[North] ∈ xs, '[East] ∈ xs) => RelLoc xs (V2 a); northEast = yxLoc north east
-northWest :: ('[North] ∈ xs, '[West] ∈ xs) => RelLoc xs (V2 a); northWest = yxLoc north west
-
+southEast :: LinearSpace v a => Division a => ('[South] ∈ xs, '[East] ∈ xs) => RelLoc xs (v a); southEast p = projectOn (south p) (east p)
+southWest :: LinearSpace v a => Division a => ('[South] ∈ xs, '[West] ∈ xs) => RelLoc xs (v a); southWest p = projectOn (south p) (west p)
+northEast :: LinearSpace v a => Division a => ('[North] ∈ xs, '[East] ∈ xs) => RelLoc xs (v a); northEast p = projectOn (north p) (east p)
+northWest :: LinearSpace v a => Division a => ('[North] ∈ xs, '[West] ∈ xs) => RelLoc xs (v a); northWest p = projectOn (north p) (west p)
 
 
 -------------------------------------
