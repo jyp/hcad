@@ -305,11 +305,16 @@ centering getX p = translate (negate (locPoint (getX p))) p
 ------------------------------------------------
 -- Non-primitive ops
 
+-- | Regular polygon contained a unit-diameter circle.
 regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part '[] (V2 a)
 regularPolygon order = scale 0.5 (polygon (coords))
   where coords=[V2 (cos th) (sin th)
                | i <- [0..order-1],
                  let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
+
+-- | Regular polygon containing a unit-diameter circle.
+regularPolygonO :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part '[] (V2 a)
+regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolygon order
 
 -- | Create a mortise
 push :: Show a => Fractional a => Module a a
@@ -356,7 +361,6 @@ hexagonFill len width cell_size shape
   = intersection (scale' (V2 len width) square) $
     linearRepeat' no_of_rows (V2 tr_x <$> [negate tr_y, tr_y]) $
     linearFill width (V2 0 cell_size) $ 
-    scale cell_size $
     shape
   where no_of_rows = floor(1.2 * len / cell_size)
         tr_x = sqrt(3)/2 * cell_size
