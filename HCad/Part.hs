@@ -19,7 +19,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module HCad.Part where
 
-import Algebra.Linear hiding (scale,translate,transform)
+import Algebra.Linear hiding (transform)
 import qualified Algebra.Linear as Li
 import Algebra.Classes
 import Prelude hiding (Num(..),(/),divMod,div)
@@ -137,7 +137,8 @@ weaken (Part {..}) = Part{partVertices = filterVec partVertices
 forget :: Part xs vec -> Part '[] vec
 forget Part{..} = Part {partNormals=Nil,partVertices=Nil,..}
 
-cube :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["left", East, "front", "back", "bottom", "top"]) (V3 a)
+cube :: forall a. Module a a => Fractional a => Show a => Ring a
+     => Part (SimpleFields '[West, East, South, North, Nadir, Zenith]) (V3 a)
 cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
   where partNormals =
            V3 j o o :*
@@ -156,7 +157,8 @@ sphere :: Part '[] (V3 a)
 sphere = Part {partVertices = Nil, partNormals = Nil
               ,partCode = SCAD "sphere" [("d","1"),(("$fn","20"))] []}
 
-square :: forall a. Module a a => Fractional a => Show a => Ring a => Part (SimpleFields '["center", "left", East, "front", "back"]) (V2 a)
+square :: forall a. Module a a => Fractional a => Show a => Ring a
+       => Part (SimpleFields '["center", West, East, South, North]) (V2 a)
 square = Part {partVertices = zero :* (((0.5 :: a) *^) <$> corners)
               ,partNormals = V2 o j :* corners
               ,partCode = SCAD "square" [("size","1"),("center","true")] []}
@@ -185,7 +187,7 @@ polygon points
 
 
 linearExtrude :: forall a xs. Module a a => Fractional a => Show a
-              => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"] ++ xs) (V3 a)
+              => a -> Part xs (V2 a) -> Part (SimpleFields '[Nadir,Zenith] ++ xs) (V3 a)
 linearExtrude height Part{..}
   = Part {partVertices = (((0.5 * height) *^) <$> botTopNormals) ++* (z0 <$> partVertices)
          ,partNormals = botTopNormals ++* (z0 <$> partNormals)
@@ -249,28 +251,35 @@ transform m Part{..} = Part {partVertices = Li.transform m partVertices
                             ,partNormals = Li.normalize <$> Li.transform m partNormals
                             ,partCode = SCAD "multmatrix" [("m",m')] [partCode]}
   where m' = showL (toList (showL . ( ++ ["0"]) . toList . (fmap show) <$> m) ++ ["[0,0,0,1]"])
-          
+
 scale' :: Traversable v => Applicative v => (Module s (v s), Field s,Show s) => v s -> Part xs (v s) -> Part xs (v s)
 scale' v Part{..} = Part {partNormals = partNormals
                         ,partVertices = (v ⊙) <$> partVertices
                         ,partCode = SCAD "scale" [("v",renderVec v)] [partCode] }
 
 
+scale :: (Applicative v,Module s (v s), Field s,Traversable v,Show s) => s -> Part xs (v s) -> Part xs (v s)
+scale s = scale' (pure s)
+
 ------------------------------------------------
+-- Locations and relative locations
 
 data Loc v = Loc {locPoint :: v, locNormal :: v}
 
-
+-- | Origin point with normal pointing to 'Zenith'.
 origin :: Ring a => Loc (V3 a)
 origin = Loc {locPoint = zero, locNormal = V3 zero zero one}
 
-
 type RelLoc xs v = Part xs v -> Loc v
 
+-- | Put the focus point on the given point (not changing the focused
+-- direction)
 at :: (Foldable v, Show s, Group (v s)) => (RelLoc xs (v s)) -> (Part xs (v s) -> Part ys (v s)) -> (Part xs (v s) -> Part ys (v s))
 at relLoc f body = (translate loc . f . translate (negate loc)) body where
   loc = locPoint (relLoc body)
 
+-- | Put the focus point over or under the given point (so, leaving
+-- z-coordinate unchanged)
 atXY :: (Show s, Division s, Module s s) =>
               (Part xs (Lin V3' s) -> Loc (Lin V3' s))
               -> (Part xs (Lin V3' s) -> Part ys (Lin V3' s))
@@ -278,36 +287,7 @@ atXY :: (Show s, Division s, Module s s) =>
               -> Part ys (Lin V3' s)
 atXY f = at (projectOn origin . f)
 
-
-data PartAndLoc ys xs vec = PartAndLoc (Part ys vec -> Part xs vec)
-
-(/@) :: Part xs (v s) -> (PartAndLoc xs zs (v s)) -> Part zs (v s)
-p /@ (PartAndLoc f) = f p
-infixl 8 /@
-
--- (@+) :: (Foldable v, Show s, Group (v s)) => (Part ys (v s) -> (v s)) -> Part xs (v s) -> PartAndLoc ys (ys ++ xs) (v s)
--- f @+ p = PartAndLoc (\q -> q /+ at (f q) p)
--- infixl 9 @+
-
--- (@-) :: (Foldable v, Show s, Group (v s)) => (Part ys (v s) -> (v s)) -> Part xs (v s) -> PartAndLoc ys (ys ++ xs) (v s)
--- f @- p = PartAndLoc (\q -> q /- at (f q) p)
--- infixl 9 @-
-
-
-scale :: (Applicative v,Module s (v s), Field s,Traversable v,Show s) => s -> Part xs (v s) -> Part xs (v s)
-scale s = scale' (pure s)
-
-
-regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part '[] (V2 a)
-regularPolygon order = scale 0.5 (polygon (coords))
-  where coords=[V2 (cos th) (sin th)
-               | i <- [0..order-1],
-                 let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
-
---------------------------------------------
--- Location ops
-
--- | Make a change relative to a face
+-- | Put the focus point on the given location (point and direction)
 on :: Division a => Module a a => Floating a => Group a => Additive a => Show a
    => RelLoc xs (V3 a) -> (Part xs (V3 a) -> Part ys (V3 a)) -> (Part xs (V3 a) -> Part ys (V3 a))
 on relLoc f body = translate locPoint $ transform normUp' $ f $ transform normUp $ translate (negate locPoint) $ body
@@ -316,18 +296,29 @@ on relLoc f body = translate locPoint $ transform normUp' $ f $ transform normUp
         normUp' = Li.transpose normUp
         o = zero
 
+-- | Center the given location
 centering :: Show a => Foldable v => Group (v a) => RelLoc xs (v a) -> Part xs (v a) -> Part xs (v a)
 centering getX p = translate (negate (locPoint (getX p))) p
+
+
 
 ------------------------------------------------
 -- Non-primitive ops
 
+regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part '[] (V2 a)
+regularPolygon order = scale 0.5 (polygon (coords))
+  where coords=[V2 (cos th) (sin th)
+               | i <- [0..order-1],
+                 let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
+
+-- | Create a mortise
 push :: Show a => Fractional a => Module a a
        => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
 push depth shape body = body /- forget negative  where
   negative = translate (V3 0 0 (epsilon - 0.5 * depth)) (linearExtrude (depth+2*epsilon) shape)
   epsilon = 0.05
 
+-- | Create a tenon
 pull :: Show a => Fractional a => Module a a
        => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
 pull depth shape body = body /+ forget tenon  where
@@ -360,7 +351,7 @@ linearFill len interval part = linearRepeat (floor (len / norm interval)) interv
 hexagonFill :: Module Int s => RealFrac s => Floating s => Show s => Field s => Module s s
                => s -> s -> s
                -> Part xs (V2 s)
-               -> Part (' ['["center"], '["left"], '["right"], '["front"], '["back"]]) (V2 s)
+               -> Part (' ['["center"], '[West], '["right"], '[South], '[North]]) (V2 s)
 hexagonFill len width cell_size shape
   = intersection (scale' (V2 len width) square) $
     linearRepeat' no_of_rows (V2 tr_x <$> [negate tr_y, tr_y]) $
@@ -375,9 +366,9 @@ hexagonFill len width cell_size shape
 --------------------------------------
 -- Locations
 
-south :: '["front"] ∈ xs => RelLoc xs (v a); south = getLoc @'["front"]
-north :: '["back"] ∈ xs => RelLoc xs (v a); north = getLoc @'["back"]
-west  :: '["left"] ∈ xs => RelLoc xs (v a); west = getLoc @'["left"]
+south :: '[South] ∈ xs => RelLoc xs (v a); south = getLoc @'[South]
+north :: '[North] ∈ xs => RelLoc xs (v a); north = getLoc @'[North]
+west  :: '[West] ∈ xs => RelLoc xs (v a); west = getLoc @'[West]
 east  :: '[East] ∈ xs => RelLoc xs (v a); east = getLoc @'[East]
 
 
