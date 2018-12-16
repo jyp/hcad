@@ -22,7 +22,7 @@ module HCad.Part where
 import Algebra.Linear hiding (scale,translate,transform)
 import qualified Algebra.Linear as Li
 import Algebra.Classes
-import Prelude hiding (Num(..),(/))
+import Prelude hiding (Num(..),(/),divMod,div)
 import Data.Foldable
 import GHC.TypeLits
 import Data.List hiding (union)
@@ -183,12 +183,6 @@ polygon points
          ,partCode = SCAD "polygon" [("points",showL (map renderVec points))] []}
 
 
-regularPolygon :: Division a => Floating a => Show a => Int -> Part '[] (V2 a)
-regularPolygon order = polygon (coords)
-  where coords=[V2 (cos th) (sin th)
-               | i <- [0..order-1],
-                 let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
-
 
 linearExtrude :: forall a xs. Module a a => Fractional a => Show a
               => a -> Part xs (V2 a) -> Part (SimpleFields '["bottom","top"] ++ xs) (V3 a)
@@ -261,6 +255,7 @@ scale' v Part{..} = Part {partNormals = partNormals
                         ,partVertices = (v ⊙) <$> partVertices
                         ,partCode = SCAD "scale" [("v",renderVec v)] [partCode] }
 
+
 ------------------------------------------------
 
 data Loc v = Loc {locPoint :: v, locNormal :: v}
@@ -303,16 +298,16 @@ scale :: (Applicative v,Module s (v s), Field s,Traversable v,Show s) => s -> Pa
 scale s = scale' (pure s)
 
 
+regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part '[] (V2 a)
+regularPolygon order = scale 0.5 (polygon (coords))
+  where coords=[V2 (cos th) (sin th)
+               | i <- [0..order-1],
+                 let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
 
-------------------------------------------------
--- Non-primitive ops
+--------------------------------------------
+-- Location ops
 
-pocket :: Show a => Fractional a => Module a a
-       => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
-pocket depth shape body = body /- forget negative  where
-  negative = translate (V3 0 0 (epsilon - 0.5 * depth)) (linearExtrude (depth+2*epsilon) shape)
-  epsilon = 0.05
-
+-- | Make a change relative to a face
 on :: Division a => Module a a => Floating a => Group a => Additive a => Show a
    => RelLoc xs (V3 a) -> (Part xs (V3 a) -> Part ys (V3 a)) -> (Part xs (V3 a) -> Part ys (V3 a))
 on relLoc f body = translate locPoint $ transform normUp' $ f $ transform normUp $ translate (negate locPoint) $ body
@@ -321,17 +316,60 @@ on relLoc f body = translate locPoint $ transform normUp' $ f $ transform normUp
         normUp' = Li.transpose normUp
         o = zero
 
--- orient3dTo :: forall x xs a. Module a a => Ord a => Floating a => Division a => Ring a => x ∈ xs => V3 a -> Part xs (V3 a) -> Part xs (V3 a)
--- orient3dTo x p@Part{..} = matVecMul r <$> p
---   where y = getField @x partNormals
---         v = x × y
---         c = dotProd x y
---         s = norm v
---         r = c *^ identity + s *^ crossProductMatrix v + (1-c) *^ (v ⊗ v)
-
 centering :: Show a => Foldable v => Group (v a) => RelLoc xs (v a) -> Part xs (v a) -> Part xs (v a)
 centering getX p = translate (negate (locPoint (getX p))) p
 
+------------------------------------------------
+-- Non-primitive ops
+
+push :: Show a => Fractional a => Module a a
+       => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
+push depth shape body = body /- forget negative  where
+  negative = translate (V3 0 0 (epsilon - 0.5 * depth)) (linearExtrude (depth+2*epsilon) shape)
+  epsilon = 0.05
+
+pull :: Show a => Fractional a => Module a a
+       => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
+pull depth shape body = body /+ forget tenon  where
+  tenon = translate (V3 0 0 (0.5 * depth)) (linearExtrude depth shape)
+
+
+----------------------------------
+-- Filling
+
+linearRepeat' :: (Foldable v, Show s, Module Int (v s)) =>
+                Int -> [v s] -> Part xs (v s) -> Part '[] (v s)
+linearRepeat' number intervals part =
+  unions [translate (k *^ (intervals !! k) + j *^ add intervals) part
+         | i <- [negate number `div` 2..number `div` 2],
+           let (j,k) = i `divMod` length intervals
+         ]
+
+linearRepeat :: (Foldable v, Show s, Module Int (v s)) =>
+                Int -> v s -> Part xs (v s) -> Part '[] (v s)
+linearRepeat number interval part =
+  unions [translate (i *^ interval) part
+         | i <- [negate number `div` 2..number `div` 2]]
+
+linearFill :: (Show s, Module Int (v s), RealFrac s, Division s,
+                     Traversable v, Applicative v, Ring s, Floating s) =>
+                    s -> v s -> Part xs (v s) -> Part '[] (v s)
+linearFill len interval part = linearRepeat (floor (len / norm interval)) interval part
+
+-- | Fill a rectangle in hexagonal pattern
+hexagonFill :: Module Int s => RealFrac s => Floating s => Show s => Field s => Module s s
+               => s -> s -> s
+               -> Part xs (V2 s)
+               -> Part (' ['["center"], '["left"], '["right"], '["front"], '["back"]]) (V2 s)
+hexagonFill len width cell_size shape
+  = intersection (scale' (V2 len width) square) $
+    linearRepeat' no_of_rows (V2 tr_x <$> [negate tr_y, tr_y]) $
+    linearFill width (V2 0 cell_size) $ 
+    scale cell_size $
+    shape
+  where no_of_rows = floor(1.2 * len / cell_size)
+        tr_x = sqrt(3)/2 * cell_size
+        tr_y = cell_size / 2
 
 
 --------------------------------------
