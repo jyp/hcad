@@ -186,17 +186,22 @@ polygon points
 
 
 
-linearExtrude :: forall a xs. Module a a => Fractional a => Show a
+linearExtrude :: forall a xs. Division a => Floating a => Module a a => Fractional a => Show a
               => a -> Part xs (V2 a) -> Part (SimpleFields '[Nadir,Zenith] ++ xs) (V3 a)
-linearExtrude height Part{..}
+linearExtrude height p = linearExtrudeEx height 1 0 p
+
+
+linearExtrudeEx :: forall a xs. Floating a => Division a => Module a a => Fractional a => Show a
+              => a -> a -> a -> Part xs (V2 a) -> Part (SimpleFields '[Nadir,Zenith] ++ xs) (V3 a)
+linearExtrudeEx height scaleFactor twist Part{..}
   = Part {partVertices = (((0.5 * height) *^) <$> botTopNormals) ++* (z0 <$> partVertices)
          ,partNormals = botTopNormals ++* (z0 <$> partNormals)
          ,partCode = SCAD "linear_extrude"
                      [("height",show height)
                      ,("center","true")
                      ,("convexity","10")
-                     -- ,("twist",0)
-                     -- ,("scale",)
+                     ,("scale",show scaleFactor)
+                     ,("twist",showAngle twist )
                      ]
                      [partCode]
          }
@@ -205,6 +210,7 @@ linearExtrude height Part{..}
                           Nil
           o = zero
           z0 (Lin (V2' x y)) = (V3 x y o)
+
 
 flattenUnions :: [SCAD] -> [SCAD]
 flattenUnions (SCAD "union" [] xs:ys) = xs ++ flattenUnions ys
@@ -317,18 +323,26 @@ regularPolygonO :: Field a => Module a a => Division a => Floating a => Show a =
 regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolygon order
 
 -- | Create a mortise
-push :: Show a => Fractional a => Module a a
+push :: (a ~ Double)
        => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
-push depth shape body = body /- forget negative  where
-  negative = translate (V3 0 0 (epsilon - 0.5 * depth)) (linearExtrude (depth+2*epsilon) shape)
-  epsilon = 0.05
+push depth shape = difference $ forget $ 
+                   translate (V3 0 0 (epsilon - 0.5 * depth)) (linearExtrude (depth+2*epsilon) shape)
+  where epsilon = 0.05
 
 -- | Create a tenon
-pull :: Show a => Fractional a => Module a a
+pull :: (a ~ Double)
        => a -> Part ys (V2 a) -> (Part xs (V3 a) -> Part (xs ++ '[]) (V3 a))
-pull depth shape body = body /+ forget tenon  where
-  tenon = translate (V3 0 0 (0.5 * depth)) (linearExtrude depth shape)
+pull depth shape = union $ forget $ translate (V3 0 0 (0.5 * depth)) (linearExtrude depth shape)
 
+counterSink :: (Floating a, Show a, Module a a, Field a) =>
+                     a
+                     -> a
+                     -> Part xs (Lin V3' a)
+                     -> Part (xs ++ '[]) (Lin V3' a)
+counterSink angle diameter = difference (forget negative)  where
+  negative = (translate (V3 0 0 (epsilon - 0.5 * diameter * c)) $ transform (rotation3d pi (V3 1 0 0)) (scale diameter (linearExtrudeEx c 0 0 circle )))
+  epsilon = 0.05
+  c = sin angle
 
 ----------------------------------
 -- Filling
@@ -415,7 +429,8 @@ renderVec v = showL (map show (toList v))
 showL :: [String] -> String
 showL v = "[" <> intercalate ", " v <> "]"
 
-
+showAngle :: Show a => Division a => Floating a => a -> String
+showAngle x = show (x * (180 / pi))
 
 renderCode :: SCAD -> [String]
 renderCode (SCAD fname args body)
