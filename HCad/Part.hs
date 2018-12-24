@@ -155,7 +155,7 @@ cube = Part {partVertices = ((0.5 :: a) *^) <$> partNormals,..}
 
 sphere :: Part '[] (V3 a)
 sphere = Part {partVertices = Nil, partNormals = Nil
-              ,partCode = SCAD "sphere" [("d","1"),(("$fn","20"))] []}
+              ,partCode = SCAD "sphere" [("r","0.5"),(("$fn","20"))] []}
 
 square :: forall a. Module a a => Fractional a => Show a => Ring a
        => Part (SimpleFields '["center", West, East, South, North]) (V2 a)
@@ -176,7 +176,7 @@ rectangle sz = scale' sz  square
 
 circle :: Part '[] (V2 a)
 circle = Part {partVertices = Nil, partNormals = Nil
-              ,partCode = SCAD "circle" [("d","1"),("$fn","20")] []}
+              ,partCode = SCAD "circle" [("r","0.5"),("$fn","20")] []}
 
 polygon :: Show a => [V2 a] -> Part '[] (V2 a)
 polygon points
@@ -291,7 +291,7 @@ atXY :: (Show s, Division s, Module s s) =>
               -> (Part xs (Lin V3' s) -> Part ys (Lin V3' s))
               -> Part xs (Lin V3' s)
               -> Part ys (Lin V3' s)
-atXY f = at (projectOn origin . f)
+atXY f = at (projectOnPlane origin . f)
 
 -- | Put the focus point on the given location (point and direction)
 on :: Division a => Module a a => Floating a => Group a => Additive a => Show a
@@ -388,16 +388,40 @@ south :: '[South] ∈ xs => RelLoc xs (v a); south = getLoc @'[South]
 north :: '[North] ∈ xs => RelLoc xs (v a); north = getLoc @'[North]
 west  :: '[West] ∈ xs => RelLoc xs (v a); west = getLoc @'[West]
 east  :: '[East] ∈ xs => RelLoc xs (v a); east = getLoc @'[East]
+nadir :: '[Nadir] ∈ xs => RelLoc xs (v a); nadir = getLoc @'[Nadir]
+zenith :: '[Zenith] ∈ xs => RelLoc xs (v a); zenith = getLoc @'[Zenith]
 
 
-projectOn :: (Division scalar, Applicative v, Traversable v, Module scalar (v scalar), Group (v scalar))
+projectOnPlane :: (Applicative v, Traversable v, Module scalar (v scalar), Group (v scalar))
           => Loc (v scalar) -> Loc (v scalar) -> Loc (v scalar)
-projectOn Loc {locNormal = planeNormal
+projectOnPlane Loc {locNormal = planeNormal
               , locPoint = planeOrigin}
           Loc {..} = Loc {locPoint = position, locNormal = locNormal}
  where θ = (planeOrigin - locPoint) · planeNormal
        position = θ *^ planeNormal + locPoint
        -- equation : (position - planeOrigin) · planeNormal = 0
+
+(|<-) :: (Applicative v, Traversable v,
+                Module scalar (v scalar), Group (v scalar)) =>
+               (t -> Loc (v scalar))
+               -> (t -> Loc (v scalar)) -> t -> Loc (v scalar)
+(plane |<- pos) p = projectOnPlane (plane p) (pos p)
+infixr |<-
+
+projectOnLine :: (Applicative v, Traversable v,
+                        Module scalar (v scalar), Group (v scalar)) =>
+                       Loc (v scalar) -> Loc (v scalar) -> Loc (v scalar)
+projectOnLine Loc {locNormal = lineNormal, locPoint = lineOrigin}
+              Loc {..} = Loc {locPoint = position, locNormal = locNormal}
+  where cosθ = (locPoint - lineOrigin) · lineNormal 
+        position = lineOrigin + cosθ *^ lineNormal 
+
+(/<-) :: (Applicative v, Traversable v, Module scalar (v scalar),
+                Group (v scalar)) =>
+               (t -> Loc (v scalar))
+               -> (t -> Loc (v scalar)) -> t -> Loc (v scalar)
+(line /<- pos) p = projectOnLine (line p) (pos p)
+
 yxPoint :: V2 a -> V2 a -> V2 a
 yxPoint (Lin (V2' _ y)) (Lin (V2' x _)) = V2 x y
 
@@ -414,10 +438,10 @@ type South = "front"
 type Zenith = "top"
 type Nadir = "bottom"
 
-southEast :: LinearSpace v a => Division a => ('[South] ∈ xs, '[East] ∈ xs) => RelLoc xs (v a); southEast p = projectOn (south p) (east p)
-southWest :: LinearSpace v a => Division a => ('[South] ∈ xs, '[West] ∈ xs) => RelLoc xs (v a); southWest p = projectOn (south p) (west p)
-northEast :: LinearSpace v a => Division a => ('[North] ∈ xs, '[East] ∈ xs) => RelLoc xs (v a); northEast p = projectOn (north p) (east p)
-northWest :: LinearSpace v a => Division a => ('[North] ∈ xs, '[West] ∈ xs) => RelLoc xs (v a); northWest p = projectOn (north p) (west p)
+southEast :: LinearSpace v a => Division a => ('[South] ∈ xs, '[East] ∈ xs) => RelLoc xs (v a); southEast p = projectOnPlane (south p) (east p)
+southWest :: LinearSpace v a => Division a => ('[South] ∈ xs, '[West] ∈ xs) => RelLoc xs (v a); southWest p = projectOnPlane (south p) (west p)
+northEast :: LinearSpace v a => Division a => ('[North] ∈ xs, '[East] ∈ xs) => RelLoc xs (v a); northEast p = projectOnPlane (north p) (east p)
+northWest :: LinearSpace v a => Division a => ('[North] ∈ xs, '[West] ∈ xs) => RelLoc xs (v a); northWest p = projectOnPlane (north p) (west p)
 
 
 -------------------------------------
