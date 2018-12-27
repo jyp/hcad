@@ -281,8 +281,14 @@ type RelLoc xs v = Part xs v -> Loc v
 -- | Put the focus point on the given point (not changing the focused
 -- direction)
 at :: (Foldable v, Show s, Group (v s)) => (RelLoc xs (v s)) -> (Part xs (v s) -> Part ys (v s)) -> (Part xs (v s) -> Part ys (v s))
-at relLoc f body = (translate loc . f . translate (negate loc)) body where
-  loc = locPoint (relLoc body)
+at relLoc f body = translating (locPoint (relLoc body)) f body
+
+translating :: (Foldable v, Show s, Group (v s)) =>
+                     v s
+                     -> (Part xs1 (v s) -> Part xs2 (v s))
+                     -> Part xs1 (v s)
+                     -> Part xs2 (v s)
+translating delta f = translate delta . f . translate (negate delta)
 
 -- | Put the focus point over or under the given point (so, leaving
 -- z-coordinate unchanged)
@@ -421,6 +427,19 @@ projectOnLine Loc {locNormal = lineNormal, locPoint = lineOrigin}
                (t -> Loc (v scalar))
                -> (t -> Loc (v scalar)) -> t -> Loc (v scalar)
 (line /<- pos) p = projectOnLine (line p) (pos p)
+
+
+projectOnPoint :: (Applicative v, Traversable v,
+                        Module scalar (v scalar), Group (v scalar)) =>
+                       Loc (v scalar) -> Loc (v scalar) -> Loc (v scalar)
+projectOnPoint Loc {locPoint = lineOrigin}
+              Loc {..} = projectOnLine Loc {locNormal=locNormal, locPoint=lineOrigin} Loc {..}
+
+(.<-) :: (Applicative v, Traversable v, Module scalar (v scalar),
+                Group (v scalar)) =>
+               (t -> Loc (v scalar))
+               -> (t -> Loc (v scalar)) -> t -> Loc (v scalar)
+(line .<- pos) p = projectOnPoint (line p) (pos p)
 
 yxPoint :: V2 a -> V2 a -> V2 a
 yxPoint (Lin (V2' _ y)) (Lin (V2' x _)) = V2 x y
