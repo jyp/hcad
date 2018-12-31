@@ -17,5 +17,6 @@ library
   exposed-modules: Algebra.Linear
                  , HCad
                  , HCad.Part
+                 , HCad.SCAD
 
   default-language:    Haskell2010

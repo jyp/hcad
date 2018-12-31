@@ -299,18 +299,25 @@ atXY :: (Show s, Division s, Module s s) =>
               -> Part ys (Lin V3' s)
 atXY f = at (projectOnPlane origin . f)
 
+
+transforming :: (Show s, Floating s, Division s, Module s s) =>
+                      Mat (Lin V3') s
+                      -> (Part xs1 (V3 s) -> Part xs2 (V3 s))
+                      -> Part xs1 (V3 s)
+                      -> Part xs2 (V3 s)
+transforming o f = transform (Li.transpose o) . f . transform o
+
 -- | Put the focus point on the given location (point and direction)
 on :: Division a => Module a a => Floating a => Group a => Additive a => Show a
    => RelLoc xs (V3 a) -> (Part xs (V3 a) -> Part ys (V3 a)) -> (Part xs (V3 a) -> Part ys (V3 a))
-on relLoc f body = translate locPoint $ transform normUp' $ f $ transform normUp $ translate (negate locPoint) $ body
+on relLoc f body = translating locPoint (transforming normUp f) body
   where Loc{..} = relLoc body
         normUp = rotationFromTo locNormal (V3 o o 1)
-        normUp' = Li.transpose normUp
         o = zero
 
 -- | Center the given location
-centering :: Show a => Foldable v => Group (v a) => RelLoc xs (v a) -> Part xs (v a) -> Part xs (v a)
-centering getX p = translate (negate (locPoint (getX p))) p
+center :: Show a => Foldable v => Group (v a) => RelLoc xs (v a) -> Part xs (v a) -> Part xs (v a)
+center getX p = translate (negate (locPoint (getX p))) p
 
 
 
@@ -474,22 +481,6 @@ showL v = "[" <> intercalate ", " v <> "]"
 
 showAngle :: Show a => Division a => Floating a => a -> String
 showAngle x = show (x * (180 / pi))
-
-renderCode :: SCAD -> [String]
-renderCode (SCAD fname args body)
-  -- | fname == "union" = rbody
-  | otherwise = (fname <>"(" <> (intercalate ", " [pname <> "=" <> arg
-                                                                      | (pname,arg) <- args]) <> ")") `app` rbody
-  where rbody = case body of
-          [] -> []
-          [x] -> renderCode x
-          xs -> "{" : fmap indent (concatMap (semicolon . renderCode) xs) ++ "}" : []
-
-        indent xs = " " ++ xs
-        semicolon [] = error "semicolon: empty"
-        semicolon xs = init xs ++ [last xs ++ ";"]
-        x `app` (y : ys) = (x<>y) : ys
-        app x [] = [x]
 
 
 
