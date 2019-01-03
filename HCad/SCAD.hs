@@ -20,7 +20,7 @@ import HCad.Part
 import Data.List
 
 
-render :: Part xs (v Double) -> String
+render :: Part xs v Double -> String
 render = unlines . renderCode . partCode
 
 
