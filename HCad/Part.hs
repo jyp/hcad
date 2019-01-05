@@ -399,7 +399,7 @@ hexagonFill :: Module Int s => RealFrac s => Floating s => Show s => Field s => 
 hexagonFill len width cell_size shape
   = intersection (scale' (V2 len width) square) $
     linearRepeat' no_of_rows (V2 tr_x <$> [negate tr_y, tr_y]) $
-    linearFill width (V2 0 cell_size) $ 
+    linearFill (width + cell_size) (V2 0 cell_size) $ -- width + cell_size: we need a bit larger area because of the tr_y offsets
     shape
   where no_of_rows = floor(1.2 * len / cell_size)
         tr_x = sqrt(3)/2 * cell_size
