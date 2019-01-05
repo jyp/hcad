@@ -150,6 +150,11 @@ weaken (Part {..}) = Part{partVertices = filterVec partVertices
 forget :: Part xs vec a -> Part '[] vec a
 forget Part{..} = Part {partBases=Nil,partVertices=Nil,..}
 
+meshImport :: String -> Part3 '[] a
+meshImport fname = Part {partBases=Nil
+                  ,partVertices=Nil
+                  ,partCode= SCAD "import" [("file",show fname)] []}
+
 cube :: Show a => Ring' a => Floating a => Division a
      => Part '[ '["bottom"], '["top"], '["right"], '["back"],
                         '["left"], '["front"], '["northEast"], '["northWest"],
