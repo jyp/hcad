@@ -260,11 +260,12 @@ translate v Part{..} = Part {partBases = partBases
                             ,partCode = SCAD "translate" [("v",renderVec v)] [partCode]
                             }
 
-rotate :: Show s => Floating s => Division s => Module s s => Ring s => Mat3x3 s -> Part3 xs s -> Part3 xs s
+rotate :: Traversable v => Applicative v => Show s => Floating s => Division s => Module s s => Ring s => SqMat v s -> Part xs v s -> Part xs v s
 rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
                          ,partBases = (\subBase -> m `matMul`subBase ) <$>  partBases
                          ,partCode = SCAD "multmatrix" [("m",m')] [partCode]}
-  where m' = showL (toList (showL . ( ++ ["0"]) . toList . (fmap show) <$> fromMat m) ++ ["[0,0,0,1]"])
+  -- where m' = showL (toList (showL . ( ++ ["0"]) . toList . (fmap show) <$> fromMat m) ++ ["[0,0,0,1]"])
+  where m' = showL (toList (showL . toList . (fmap show) <$> fromMat m))
 
 scale' :: Traversable v => Applicative v => (Field s,Show s) => Euclid v s -> Part xs v s -> Part xs v s
 scale' v Part{..} = Part {partBases = partBases -- FIXME: shear the base!
@@ -310,16 +311,16 @@ translating delta f = translate delta . f . translate (negate delta)
 -- atXY f = at (projectOnPlane origin . f)
 
 
-rotating :: (Show s, Floating s, Field s, Module s s) =>
-                      Mat3x3 s
-                      -> (Part3 xs1 s -> Part3 xs2 s)
-                      -> Part3 xs1 s
-                      -> Part3 xs2 s
+rotating :: Applicative v => Traversable v => (Show s, Floating s, Field s, Module s s) =>
+                      SqMat v s
+                      -> (Part xs1 v s -> Part xs2 v s)
+                      -> Part xs1 v s
+                      -> Part xs2 v s
 rotating o f = rotate o . f . rotate (transpose o)
 
 -- | Put the focus point on the given locus
-on :: Division a => Module a a => Floating a => Field a => Show a
-   => RelLoc xs V3' a -> (Part xs V3' a -> Part ys V3' a) -> (Part xs V3' a -> Part ys V3' a)
+on :: Traversable v => Applicative v => Division a => Module a a => Floating a => Field a => Show a
+   => RelLoc xs v a -> (Part xs v a -> Part ys v a) -> (Part xs v a -> Part ys v a)
 on relLoc f body = translating locPoint (rotating locBase f) body
   where Loc{..} = relLoc body
 
@@ -355,15 +356,17 @@ pull :: (a ~ Double)
        => a -> Part2 ys a -> (Part3 xs a -> Part3 (xs ++ '[]) a)
 pull depth shape = union $ forget $ translate (V3 0 0 (0.5 * depth)) (extrude depth shape)
 
+cone' angle = (extrudeEx c 0 0 circle)
+  where c = sin angle
+
 counterSink :: (Floating a, Show a, Module a a, Field a) =>
                      a
                      -> a
                      -> Part3 xs a
                      -> Part3 (xs ++ '[]) a
 counterSink angle diameter = difference (forget negative)  where
-  negative = (translate (V3 0 0 (epsilon - 0.5 * diameter * c)) $ rotate (rotation3d pi (V3 1 0 0)) (scale diameter (extrudeEx c 0 0 circle )))
+  negative = translate (V3 0 0 epsilon) $ center nadir $ rotate (rotation3d pi (V3 1 0 0)) (scale diameter $ cone' angle)
   epsilon = 0.05
-  c = sin angle
 
 ----------------------------------
 -- Filling
