@@ -178,7 +178,7 @@ cube = extrude one square
 
 sphere :: Part3 '[] a
 sphere = Part {partVertices = Nil, partBases = Nil
-              ,partCode = SCAD "sphere" [("r","0.5"),(("$fn","20"))] []}
+              ,partCode = SCAD "sphere" [("r","0.5")] []}
 
 square :: forall a. Module a a => Floating a => Show a => Ring a
        => Part2 (SimpleFields '[East, North, West, South, "northEast", "northWest", "southWest", "southEast"]) a
@@ -193,7 +193,7 @@ rectangle sz = scale' sz  square
 
 circle :: Part2 '[] a
 circle = Part {partVertices = Nil, partBases = Nil
-              ,partCode = SCAD "circle" [("r","0.5"),("$fn","20")] []}
+              ,partCode = SCAD "circle" [("r","0.5")] []}
 
 polygon :: Show a => [V2 a] -> Part2 '[] a
 polygon points
@@ -235,13 +235,13 @@ extrudeEx height scaleFactor twist Part{..}
           conv m = transpose (zz0 m) `matMul` zToX `matMul` (zz0 m)
 
 lathe :: (Show a, Division a, Floating a) => Part2 xs a -> Part3 '[] a
-lathe = latheEx (2*pi)
+lathe = latheEx Nothing (2*pi)
 
-latheEx :: (Show a, Division a, Floating a) => a -> Part2 xs a -> Part3 '[] a
-latheEx angle Part{..} =
+latheEx :: (Show a, Division a, Floating a) => Maybe Int -> a -> Part2 xs a -> Part3 '[] a
+latheEx fn angle Part{..} =
   Part {partVertices = Nil,
         partBases = Nil,
-        partCode = SCAD "rotate_extrude" [("angle",showAngle angle),("$fn","50")] [partCode]
+        partCode = SCAD "rotate_extrude" ([("angle",showAngle angle)] ++ [("$fn",show x) | Just x <- [fn]]) [partCode]
        }
 
 

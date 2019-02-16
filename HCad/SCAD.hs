@@ -20,8 +20,15 @@ import HCad.Part
 import Data.List
 
 
-render :: Part xs v Double -> String
-render = unlines . renderCode . partCode
+data Options = Options {optFn :: Int}
+
+defaultOptions :: Options
+defaultOptions = Options {optFn = 10}
+
+render :: Options -> Part xs v Double -> String
+render Options{..} p = unlines (("$fn="++show optFn++";"):
+                                renderCode (partCode p)++
+                                [";"])
 
 
 renderCode :: SCAD -> [String]
