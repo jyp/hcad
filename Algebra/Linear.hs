@@ -1,32 +1,30 @@
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MonoLocalBinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Algebra.Linear where
 
 import Algebra.Classes
-import Prelude (cos,sin,Floating(..),Functor(..),Show(..),Eq(..),Int,snd,fst,flip,($))
+import Prelude (cos,sin,Floating(..),Functor(..),Show(..),Eq(..),Int,snd,fst,flip,($),Double)
 import Control.Applicative
 import Data.Foldable
 import Data.Traversable
@@ -114,7 +112,7 @@ normalize v = recip (norm v) *^ v
 
 -- | Cross product https://en.wikipedia.org/wiki/Cross_product
 (×) :: Ring a => V3 a -> V3 a -> V3 a
-(V3 a1 a2 a3) × (V3 b1 b2 b3) = V3 (a2*b3 - a3*b2 )  (negate (a1*b3 - a3*b1 )) (a1*b2 - a2*b1) 
+(V3 a1 a2 a3) × (V3 b1 b2 b3) = V3 (a2*b3 - a3*b2)  (negate (a1*b3 - a3*b1)) (a1*b2 - a2*b1)
 
 index :: Applicative v => Traversable v => v Int
 index = fst (runState (sequenceA (pure increment)) zero)
@@ -136,16 +134,13 @@ matVecMul (Mat m) v = Euclid (euclideanDotProd v <$> (Euclid <$> m))
    where euclideanDotProd x y = add (Euclid x ⊙ Euclid y)
 
 
--- transform :: (Foldable f1, Ring b, Applicative f1, Functor f, Functor f2) => Mat b f2 f1 -> f (Euclid f1 b) -> f (Euclid f2 b)
--- transform m t = matVecMul m <$> t
-
 rotation2d :: Floating a => a -> Mat2x2 a
-rotation2d θ = Mat $ V2' (V2' ( cos θ) (-sin θ))
+rotation2d θ = Mat $ V2' (V2' (cos θ) (-sin θ))
                          (V2' (sin θ)  (cos θ))
 
 
 -- >>> rotation2d (pi/2)
--- V2 (V2 6.123233995736766e-17 1.0) (V2 (-1.0) 6.123233995736766e-17)
+-- Mat {fromMat = V2' (V2' 6.123233995736766e-17 (-1.0)) (V2' 1.0 6.123233995736766e-17)}
 
 crossProductMatrix :: Group a => V3 a -> Mat3x3 a
 crossProductMatrix (V3 a1 a2 a3) = Mat (V3'  (V3' zero (negate a3) a2)
@@ -187,5 +182,5 @@ matMul :: (Traversable u, Ring s, Applicative w, Applicative v, Applicative u) =
 matMul (transpose -> Mat y) (Mat x)  = tensorWith (\a b -> add (a ⊙ b)) (Euclid x) (Euclid y)
 
 -- >>> let t1 = rotation2d (1::Double) in matMul t1 (transpose t1)
--- V2 (V2 1.0 0.0) (V2 0.0 1.0)
+-- Mat {fromMat = V2' (V2' 1.0 0.0) (V2' 0.0 1.0)}
 
