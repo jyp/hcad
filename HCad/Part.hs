@@ -27,6 +27,8 @@ import Data.Foldable
 import GHC.TypeLits
 import Data.List (intercalate)
 import Data.Kind (Type)
+import Data.Type.Equality
+import Unsafe.Coerce
 
 data SCAD = SCAD {scadPrim :: String
                  ,scadArgs :: [(String,String)]
@@ -44,6 +46,13 @@ type Part2 xs a = Part xs V2' a
 type family (++) (a::[k]) (b::[k]) where
   '[] ++ a = a
   (x ': xs) ++ ys = x ': (xs ++ ys)
+
+unitR :: xs :~: (xs ++ '[])
+unitR = unsafeCoerce Refl
+
+(#>) :: a :~: b -> (a ~ b => k) -> k
+Refl #> k = k
+infixr 0 #>
 
 infixr ++*
 (++*) :: NamedVec xs v -> NamedVec ys v -> NamedVec (xs ++ ys) v
@@ -155,6 +164,12 @@ meshImport fname = Part {partBases=Nil
                   ,partVertices=Nil
                   ,partCode= SCAD "import" [("file",show fname)] []}
 
+color' :: (Show s) => Double -> V3 s -> Part xs vec s -> Part xs vec s
+color' a c Part{..} = Part {partCode = SCAD "color" [("c",renderVec c),("alpha",show a)] [partCode],..}
+
+color :: (Show s) => V3 s -> Part xs vec s -> Part xs vec s
+color = color' 1
+
 cube :: Show a => Ring' a => Floating a => Division a
      => Part '[ '["bottom"], '["top"], '["right"], '["back"],
                         '["left"], '["front"], '["northEast"], '["northWest"],
@@ -219,6 +234,17 @@ extrudeEx height scaleFactor twist Part{..}
                         (-1) 0 0
           conv m = transpose (zz0 m) `matMul` zToX `matMul` (zz0 m)
 
+lathe :: (Show a, Division a, Floating a) => Part2 xs a -> Part3 '[] a
+lathe = latheEx (2*pi)
+
+latheEx :: (Show a, Division a, Floating a) => a -> Part2 xs a -> Part3 '[] a
+latheEx angle Part{..} =
+  Part {partVertices = Nil,
+        partBases = Nil,
+        partCode = SCAD "rotate_extrude" [("angle",showAngle angle),("$fn","50")] [partCode]
+       }
+
+
 flattenUnions :: [SCAD] -> [SCAD]
 flattenUnions (SCAD "union" [] xs:ys) = xs ++ flattenUnions ys
 flattenUnions (x:xs) = x:flattenUnions xs
@@ -266,6 +292,12 @@ rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
                          ,partCode = SCAD "multmatrix" [("m",m')] [partCode]}
   -- where m' = showL (toList (showL . ( ++ ["0"]) . toList . (fmap show) <$> fromMat m) ++ ["[0,0,0,1]"])
   where m' = showL (toList (showL . toList . (fmap show) <$> fromMat m))
+
+
+mirror :: Foldable v => Show a => Euclid v a -> Part xs v a -> Part '[] v a
+mirror normal p = Part {partBases=Nil
+                       ,partVertices=Nil
+                       ,partCode= SCAD "mirror" [("v",renderVec normal)] [partCode p]}
 
 scale' :: Traversable v => Applicative v => (Field s,Show s) => Euclid v s -> Part xs v s -> Part xs v s
 scale' v Part{..} = Part {partBases = partBases -- FIXME: shear the base!
@@ -333,6 +365,18 @@ center getX p = translate (negate (locPoint (getX p))) p
 ------------------------------------------------
 -- Non-primitive ops
 
+
+xAxis :: V3 Double
+xAxis = V3 1 0 0
+
+yAxis :: V3 Double
+yAxis = V3 0 1 0
+
+zAxis :: V3 Double
+zAxis = V3 0 0 1
+
+
+
 -- | Regular polygon contained a unit-diameter circle.
 regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part2 '[] a
 regularPolygon order = scale 0.5 (polygon coords)
@@ -345,26 +389,27 @@ regularPolygonO :: Field a => Module a a => Division a => Floating a => Show a =
 regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolygon order
 
 -- | Create a mortise
-push :: (a ~ Double)
-       => a -> Part2 ys a -> (Part3 xs a -> Part3 (xs ++ '[]) a)
-push depth shape = difference $ forget $ 
-                   translate (V3 0 0 (epsilon - 0.5 * depth)) (extrude (depth+2*epsilon) shape)
-  where epsilon = 0.05
+push :: forall xs ys.
+        Double -> Part2 ys Double -> (Part3 xs Double -> Part3 xs Double)
+push depth shape =
+  unitR @xs #> (difference $ forget $ 
+                translate (V3 0 0 (epsilon - 0.5 * depth)) (extrude (depth+2*epsilon) shape))
+  where epsilon :: Double
+        epsilon = 0.05
 
 -- | Create a tenon
-pull :: (a ~ Double)
-       => a -> Part2 ys a -> (Part3 xs a -> Part3 (xs ++ '[]) a)
-pull depth shape = union $ forget $ translate (V3 0 0 (0.5 * depth)) (extrude depth shape)
+pull :: forall xs ys a. (a ~ Double)
+       => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
+pull depth shape = unitR @xs #> union $ forget $ translate (V3 0 0 (0.5 * depth)) (extrude depth shape)
 
+cone' :: (Floating a, Division a, Module a a, Show a) => a -> Part3 '[ '["bottom"], '["top"]] a
 cone' angle = (extrudeEx c 0 0 circle)
   where c = sin angle
 
-counterSink :: (Floating a, Show a, Module a a, Field a) =>
-                     a
-                     -> a
-                     -> Part3 xs a
-                     -> Part3 (xs ++ '[]) a
-counterSink angle diameter = difference (forget negative)  where
+counterSink :: forall xs a.
+  (Floating a, Show a, Module a a, Field a)
+  => a -> a -> Part3 xs a -> Part3 xs a
+counterSink angle diameter = unitR @xs #> difference (forget negative)  where
   negative = translate (V3 0 0 epsilon) $ center nadir $ rotate (rotation3d pi (V3 1 0 0)) (scale diameter $ cone' angle)
   epsilon = 0.05
 
