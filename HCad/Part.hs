@@ -396,6 +396,13 @@ regularPolygon order = scale 0.5 (polygon coords)
 regularPolygonO :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part2 '[] a
 regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolygon order
 
+-- | A circle with an angular top. The argument is the top angle; often pi/2 or pi/3
+waterdrop :: Field a => (Division a, Group a, Floating a, Show a) => a -> Part2 '[] a
+waterdrop alpha = union circle (scale 0.5 $ polygon [V2 c s, V2 0 (1/s), V2 (-c) s])
+  where s = sin alpha
+        c = cos alpha
+
+
 -- | Create a mortise
 push :: forall xs ys.
         Double -> Part2 ys Double -> (Part3 xs Double -> Part3 xs Double)
