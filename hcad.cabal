@@ -14,8 +14,7 @@ library
                , gasp
                -- , glpk-hs
                , mtl
-  exposed-modules: Algebra.Linear
-                 , HCad
+  exposed-modules: HCad
                  , HCad.Part
                  , HCad.SCAD
 
