@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -17,10 +18,10 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PatternSynonyms #-}
 module HCad.Part where
 
-import Algebra.Linear hiding (transform)
-import qualified Algebra.Linear as Li
+import Algebra.Linear
 import Algebra.Classes
 import Prelude hiding (Num(..),(/),divMod,div,recip)
 import Data.Foldable
@@ -29,16 +30,78 @@ import Data.List (intercalate)
 import Data.Kind (Type)
 import Data.Type.Equality
 import Unsafe.Coerce
+import Data.Char (toLower)
 
 data SCAD = SCAD {scadPrim :: String
                  ,scadArgs :: [(String,String)]
                  ,scadBody :: [SCAD]}
 
+data Op = Union | Intersection | Hull deriving Show
+data DSC vec a where
+  Polygon :: [V2 a] -> DSC V2' a
+  Prim :: SCAD -> DSC vec a
+  Color :: Double -> V3 s -> DSC vec s -> DSC vec s
+  NOp :: Op -> [DSC vec a] -> DSC vec a
+  Difference :: DSC vec a -> DSC vec a -> DSC vec a
+  Translate :: Euclid vec a -> DSC vec a -> DSC vec a
+  MultMat :: SqMat vec a -> DSC vec a -> DSC vec a
+  LExtrude :: a -> a -> a -> DSC V2' a -> DSC V3' a
+  RExtrude :: Maybe Int -> a -> DSC V2' a -> DSC V3' a
+  Mirror :: Euclid v a -> DSC v a -> DSC v a
+
+difference' :: DSC vec a -> DSC vec a -> DSC vec a
+difference' (Difference a b) c = Difference a (union' [b,c])
+difference' x y = Difference x y
+
+pattern Uni :: forall vec a. [DSC vec a] -> DSC vec a
+pattern Uni xs = NOp Union xs
+
+union' :: [DSC vec a] -> DSC vec a
+union' xs = Uni (union'' xs)
+union'' :: [DSC vec a] -> [DSC vec a]
+union'' [] = []
+union'' (Uni xs:ys) = union'' (xs++ys)
+union'' (x:xs) = x:union'' xs
+
+translate' :: Traversable vec => Ring a => Applicative vec => Euclid vec a -> DSC vec a -> DSC vec a
+translate' v (Color a c t) = Color a c (translate' v t)
+translate' v (NOp op ts) = NOp op (translate' v <$> ts)
+translate' v (Difference t u) = Difference (translate' v t) (translate' v u)
+translate' v (Translate v' t) = Translate (v+v') t 
+translate' v t = Translate v t
+
+multmat' :: Ring a => Traversable vec => Applicative vec => SqMat vec a -> DSC vec a -> DSC vec a
+multmat' v (Color a c t) = Color a c (multmat' v t)
+multmat' v (NOp op ts) = NOp op (multmat' v <$> ts)
+multmat' v (Difference t u) = Difference (multmat' v t) (multmat' v u)
+multmat' v (MultMat v' t) = MultMat (matMul v' v) t
+multmat' v t = MultMat v t
+
+toSCAD :: Foldable vec => Functor vec => Floating a => Division a => Show a => DSC vec a -> SCAD
+toSCAD = \case
+  Mirror normal r -> SCAD "mirror" [("v",renderVec normal)] [toSCAD r]
+  RExtrude fn angle partCode ->
+    SCAD "rotate_extrude" ([("angle",showAngle angle)] ++ [("$fn",show x) | Just x <- [fn]]) [toSCAD partCode]
+  (LExtrude  height scaleFactor twist partCode) ->
+    (SCAD "linear_extrude"
+      [("height",show height)
+      ,("center","true")
+      ,("convexity","10")
+      ,("scale",show scaleFactor)
+      ,("twist",showAngle twist)] [toSCAD partCode])
+  (Translate v r) -> SCAD "translate" [("v",renderVec v)] [toSCAD r]
+  (MultMat m r) -> SCAD "multmatrix" [("m",m')] [toSCAD r]
+    where m' = showL (toList (showL . toList . (fmap show) <$> fromMat m))
+  Polygon points -> SCAD "polygon" [("points",showL (map renderVec points))] []
+  Prim p -> p
+  NOp op rs -> SCAD (map toLower $ show op) [] (map toSCAD rs)
+  Difference r1 r2 -> SCAD "difference" [] [toSCAD r1, toSCAD r2]
+  Color a c r -> SCAD "color" [("c",renderVec c),("alpha",show a)] [toSCAD r]
 
 data Part xs vec a
   = Part {partVertices :: NamedVec xs (Euclid vec a) -- TODO: use Loc here
          ,partBases  :: NamedVec xs (SqMat vec a)
-         ,partCode :: SCAD }
+         ,partCode :: DSC vec a }
 
 type Part3 xs a = Part xs V3' a
 type Part2 xs a = Part xs V2' a
@@ -146,15 +209,13 @@ nameVec (a :* as) = (a :* nameVec @x as)
 
 name :: forall x xs vec a. Part xs vec a -> Part (MapCons x xs) vec a
 name (Part {..}) = Part{partVertices = nameVec @x partVertices
-                           ,partBases = nameVec @x partBases
-                           ,..}
+                       ,partBases = nameVec @x partBases
+                       ,..}
 
 weaken :: ys ⊆ xs => Part xs vec a -> Part ys vec a
 weaken (Part {..}) = Part{partVertices = filterVec partVertices
                          ,partBases = filterVec partBases
                          ,..}
-
-
 
 forget :: Part xs vec a -> Part '[] vec a
 forget Part{..} = Part {partBases=Nil,partVertices=Nil,..}
@@ -162,10 +223,12 @@ forget Part{..} = Part {partBases=Nil,partVertices=Nil,..}
 meshImport :: String -> Part3 '[] a
 meshImport fname = Part {partBases=Nil
                   ,partVertices=Nil
-                  ,partCode= SCAD "import" [("file",show fname)] []}
+                  ,partCode= Prim (SCAD "import" [("file",show fname)] [])}
+
 
 color' :: (Show s) => Double -> V3 s -> Part xs vec s -> Part xs vec s
-color' a c Part{..} = Part {partCode = SCAD "color" [("c",renderVec c),("alpha",show a)] [partCode],..}
+color' a c Part{..} = Part {partCode = Color a c partCode
+                           ,..}
 
 color :: (Show s) => V3 s -> Part xs vec s -> Part xs vec s
 color = color' 1
@@ -178,28 +241,35 @@ cube = extrude one square
 
 sphere :: Part3 '[] a
 sphere = Part {partVertices = Nil, partBases = Nil
-              ,partCode = SCAD "sphere" [("r","0.5")] []}
+              ,partCode = Prim (SCAD "sphere" [("r","0.5")] [])}
 
 square :: forall a. Module a a => Floating a => Show a => Ring a
        => Part2 (SimpleFields '[East, North, West, South, "northEast", "northWest", "southWest", "southEast"]) a
 square = Part {partVertices = matVecMul <$> partBases <*> (V2 <$> scales <*> pure 0)
-              ,partCode = SCAD "square" [("size","1"),("center","true")] []
+              ,partCode = Prim (SCAD "square" [("size","1"),("center","true")] [])
               ,..}
   where partBases = rotation2d <$> angles
         scales = 0.5 :* 0.5 :* 0.5 :* 0.5 :* sqrt 0.5 :* sqrt 0.5 :* sqrt 0.5 :* sqrt 0.5 :* Nil
         angles = (pi *) <$> (0   :* 0.5 :* 1   :* 1.5 :* 0.25     :* 0.75     :* 1.25     :* 1.75     :* Nil)
 
+rectangle :: (Field s, Show s, Module s s, Floating s) =>
+                   Euclid V2' s
+                   -> Part
+                        '[ '["right"], '["back"], '["left"], '["front"], '["northEast"],
+                          '["northWest"], '["southWest"], '["southEast"]]
+                        V2'
+                        s
 rectangle sz = scale' sz  square
 
 circle :: Part2 '[] a
 circle = Part {partVertices = Nil, partBases = Nil
-              ,partCode = SCAD "circle" [("r","0.5")] []}
+              ,partCode = Prim (SCAD "circle" [("r","0.5")] [])}
 
 polygon :: Show a => [V2 a] -> Part2 '[] a
 polygon points
   = Part {partVertices = Nil
          ,partBases = Nil
-         ,partCode = SCAD "polygon" [("points",showL (map renderVec points))] []}
+         ,partCode = Polygon points}
 
 
 
@@ -213,14 +283,7 @@ extrudeEx :: forall a xs. Floating a => Division a => Module a a => Fractional a
 extrudeEx height scaleFactor twist Part{..}
   = Part {partVertices = (flip matVecMul (V3 0 0 (0.5 * height)) <$> botTopBases) ++* (z0 <$> partVertices)
          ,partBases = botTopBases ++* (conv  <$> partBases)
-         ,partCode = SCAD "linear_extrude"
-                     [("height",show height)
-                     ,("center","true")
-                     ,("convexity","10")
-                     ,("scale",show scaleFactor)
-                     ,("twist",showAngle twist )
-                     ]
-                     [partCode]
+         ,partCode = LExtrude height scaleFactor twist partCode
          }
     where botTopBases = flip rotation3d (V3 1 0 0) <$> angles
           angles = pi :* zero :* Nil
@@ -241,7 +304,7 @@ latheEx :: (Show a, Division a, Floating a) => Maybe Int -> a -> Part2 xs a -> P
 latheEx fn angle Part{..} =
   Part {partVertices = Nil,
         partBases = Nil,
-        partCode = SCAD "rotate_extrude" ([("angle",showAngle angle)] ++ [("$fn",show x) | Just x <- [fn]]) [partCode]
+        partCode = RExtrude fn angle partCode
        }
 
 
@@ -256,58 +319,64 @@ mkUnion xs = SCAD "union" [] (flattenUnions xs)
 (/+) :: Part xs v a -> Part ys v a -> Part (xs ++ ys) v a
 (/+) p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                   ,partBases = partBases p1 ++* partBases p2
-                  ,partCode = mkUnion [partCode p1,partCode p2]}
+                  ,partCode = NOp Union [partCode p1,partCode p2]}
 union :: Part ys v a -> Part xs v a -> Part (xs ++ ys) v a
 union = flip (/+)
 
 unions :: [Part xs v a] -> Part '[] v a
 unions ps = Part {partVertices = Nil
                  ,partBases = Nil
-                 ,partCode = mkUnion (map partCode ps)}
+                 ,partCode = NOp Union (map partCode ps)}
 
 intersection :: Part ys v a -> Part xs v a -> Part (xs ++ ys) v a
 intersection p2 p1 = Part {partVertices = partVertices p1 ++* partVertices p2
                           ,partBases = partBases p1 ++* partBases p2
-                          ,partCode = SCAD "intersection" [] [partCode p1,partCode p2]}
+                          ,partCode = NOp Intersection [partCode p1,partCode p2]}
 
 hull :: Part ys v a -> Part xs v a -> Part (xs ++ ys) v a
 hull p2 p1 = Part {partVertices = partVertices p1 ++* partVertices p2
                           ,partBases = partBases p1 ++* partBases p2
-                          ,partCode = SCAD "hull" [] [partCode p1,partCode p2]}
+                          ,partCode = NOp Hull [partCode p1,partCode p2]}
 
 (/-) :: Part xs v a -> Part ys v a -> Part (xs ++ ys) v a
 (/-) p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                    ,partBases = partBases p1 ++* partBases p2
-                   ,partCode = SCAD "difference" [] [partCode p1,partCode p2]}
+                   ,partCode = difference' (partCode p1) (partCode p2)}
 
 
 
 difference :: Part ys v a -> Part xs v a -> Part (xs ++ ys) v a
 difference = flip (/-)
 
-translate :: forall (v :: Type -> Type) s xs. Additive s => Applicative v => Foldable v => Show s =>  Euclid v s -> Part xs v s -> Part xs v s
+translate :: forall (v :: Type -> Type) s xs. Ring s => Traversable v => Additive s => Applicative v => Foldable v => Show s =>  Euclid v s -> Part xs v s -> Part xs v s
 translate v Part{..} = Part {partBases = partBases
                             ,partVertices = (v +) <$> partVertices
-                            ,partCode = SCAD "translate" [("v",renderVec v)] [partCode]
+                            ,partCode = translate' v partCode
                             }
 
 rotate :: Traversable v => Applicative v => Show s => Floating s => Division s => Module s s => Ring s => SqMat v s -> Part xs v s -> Part xs v s
 rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
                          ,partBases = (\subBase -> m `matMul`subBase ) <$>  partBases
-                         ,partCode = SCAD "multmatrix" [("m",m')] [partCode]}
-  -- where m' = showL (toList (showL . ( ++ ["0"]) . toList . (fmap show) <$> fromMat m) ++ ["[0,0,0,1]"])
-  where m' = showL (toList (showL . toList . (fmap show) <$> fromMat m))
+                         ,partCode = multmat' m partCode}
 
 
-mirror :: Foldable v => Show a => Euclid v a -> Part xs v a -> Part '[] v a
-mirror normal p = Part {partBases=Nil
-                       ,partVertices=Nil
-                       ,partCode= SCAD "mirror" [("v",renderVec normal)] [partCode p]}
+mirror :: forall a v xs. Applicative v => Field a => Ring' a => Foldable v => Show a => Euclid v a -> Part xs v a -> Part xs v a
+mirror normal Part{..}
+  = Part {partBases = mm <$> partBases
+         ,partVertices = m <$> partVertices
+         ,partCode = Mirror normal partCode}
+    where m :: Euclid v a -> Euclid v a
+          m x = x - (fromInteger 2 * d) *^ normal
+            where d = normal · x
+          m' :: v a -> v a
+          m' = fromEuclid . m . Euclid
+          mm :: SqMat v a -> SqMat v a
+          mm = Mat . fmap m' . fromMat
 
 scale' :: Traversable v => Applicative v => (Field s,Show s) => Euclid v s -> Part xs v s -> Part xs v s
 scale' v Part{..} = Part {partBases = partBases -- FIXME: shear the base!
                          ,partVertices = (v ⊙) <$> partVertices
-                         ,partCode = SCAD "scale" [("v",renderVec v)] [partCode] }
+                         ,partCode = multmat' (diagonal v) partCode }
 
 scale :: (Applicative v,Field s,Traversable v,Show s) => s -> Part xs v s -> Part xs v s
 scale s = scale' (pure s)
@@ -328,10 +397,10 @@ type RelLoc xs v a = Part xs v a -> Loc v a
 
 -- | Put the focus point on the given point (not changing the focused
 -- direction)
-at :: (Foldable v, Applicative v, Show s, Group s) => (RelLoc xs v s) -> (Part xs v s -> Part ys v s) -> (Part xs v s -> Part ys v s)
+at :: Ring s => Traversable v => (Foldable v, Applicative v, Show s, Group s) => (RelLoc xs v s) -> (Part xs v s -> Part ys v s) -> (Part xs v s -> Part ys v s)
 at relLoc f body = translating (locPoint (relLoc body)) f body
 
-translating :: (Applicative v,Foldable v, Show s, Group s) =>
+translating :: Traversable v => Ring s => (Applicative v,Foldable v, Show s, Group s) =>
                      Euclid v s
                      -> (Part xs1 v s -> Part xs2 v s)
                      -> Part xs1 v s
@@ -362,7 +431,7 @@ on relLoc f body = translating locPoint (rotating locBase f) body
   where Loc{..} = relLoc body
 
 -- | Center the given location
-center :: Applicative v => Show a => Foldable v => Group a => RelLoc xs v a -> Part xs v a -> Part xs v a
+center :: Traversable v => Ring a => Applicative v => Show a => RelLoc xs v a -> Part xs v a -> Part xs v a
 center getX p = translate (negate (locPoint (getX p))) p
 
 
@@ -381,8 +450,8 @@ zAxis :: V3 Double
 zAxis = V3 0 0 1
 
 
-mirrored :: (Foldable v, Show a) => Euclid v a -> Part xs v a -> Part '[] v a
-mirrored axis part = union (forget part) (mirror axis $ forget part)
+mirrored :: forall v a xs. Module a a => Field a => Applicative v => (Foldable v, Show a) => Euclid v a -> Part xs v a -> Part xs v a
+mirrored axis part = unitR @xs #> union (forget $ mirror axis part) part
 
 
 -- | Regular polygon contained a unit-diameter circle.
@@ -431,7 +500,7 @@ counterSink angle diameter = unitR @xs #> difference (forget negative)  where
 ----------------------------------
 -- Filling
 
-linearRepeat' :: (Applicative v,Foldable v, Show s, Module Int s) =>
+linearRepeat' :: Traversable v => Ring s => (Applicative v,Foldable v, Show s, Module Int s) =>
                 Int -> [Euclid v s] -> Part xs v s -> Part '[] v s
 linearRepeat' number intervals part =
   unions [translate (k *^ (intervals !! k) + j *^ add intervals) part
@@ -439,13 +508,13 @@ linearRepeat' number intervals part =
            let (j,k) = i `divMod` length intervals
          ]
 
-linearRepeat :: (Foldable v, Show s, Module Int s,Applicative v) =>
+linearRepeat :: Traversable v => Ring s => (Foldable v, Show s, Module Int s,Applicative v) =>
                 Int -> Euclid v s -> Part xs v s -> Part '[] v s
 linearRepeat number interval part =
   unions [translate (i *^ interval) part
          | i <- [negate number `div` 2..number `div` 2]]
 
-linearFill :: (Foldable v, Show s, RealFrac s, Floating s, Field s, Ring' s, Module Int s, Applicative v) =>
+linearFill :: Traversable v => (Foldable v, Show s, RealFrac s, Floating s, Field s, Ring' s, Module Int s, Applicative v) =>
                     s -> Euclid v s -> Part xs v s -> Part '[] v s
 linearFill len interval part = linearRepeat (floor (len / norm interval)) interval part
 

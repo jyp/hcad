@@ -17,7 +17,8 @@
 module HCad.SCAD where
 
 import HCad.Part
-import Data.List
+import Data.List (intercalate)
+-- import Algebra.Linear
 
 
 data Options = Options {optFn :: Int}
@@ -25,9 +26,9 @@ data Options = Options {optFn :: Int}
 defaultOptions :: Options
 defaultOptions = Options {optFn = 10}
 
-render :: Options -> Part xs v Double -> String
+render :: Functor v => Foldable v => Options -> Part xs v Double -> String
 render Options{..} p = unlines (("$fn="++show optFn++";"):
-                                renderCode (partCode p)++
+                                renderCode (toSCAD $ partCode p)++
                                 [";"])
 
 
@@ -47,3 +48,12 @@ renderCode (SCAD fname args body)
         x `app` (y : ys) = (x<>y) : ys
         app x [] = [x]
 
+
+
+-- tst :: Part3 '[] Double
+-- tst = forget $ mirror (V3 (sin (pi/6)) (cos (pi/6)) 0) $ translate (V3 20 0 0) $ on zenith (union $ translate (V3 0 2.5 0) $ scale 5 $ cube) $ scale 10 cube
+
+-- main :: IO ()
+-- main = writeFile "tst.scad" $ render defaultOptions tst
+
+-- >>> main
