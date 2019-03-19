@@ -20,11 +20,12 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RebindableSyntax #-}
 module HCad.Part where
 
 import Algebra.Linear
 import Algebra.Classes
-import Prelude hiding (Num(..),(/),divMod,div,recip)
+import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational)
 import Data.Foldable
 import GHC.TypeLits
 import Data.List (intercalate)
@@ -44,7 +45,6 @@ instance Functor Sq4 where
 
 instance Foldable Sq4 where
   foldMap f (Sq4 (Mat v)) = foldMap (foldMap f) v
-
 
 data Op = Union | Intersection | Hull deriving Show
 data DSC vec a where
@@ -125,7 +125,7 @@ convexity = \case
   Mirror _ r -> convexity r
   RExtrude {} -> 10
 
-toSCAD :: Foldable vec => Functor vec => Floating a => Division a => Show a => DSC vec a -> SCAD
+toSCAD :: Foldable vec => Functor vec => Floating a => Field a => Show a => DSC vec a -> SCAD
 toSCAD = \case
   Mirror normal r -> SCAD "mirror" [("v",renderVec normal)] [toSCAD r]
   RExtrude fn angle partCode ->
@@ -280,7 +280,7 @@ color' a c Part{..} = Part {partCode = Color a c partCode
 color :: (Show s) => V3 s -> Part xs vec s -> Part xs vec s
 color = color' 1
 
-cube :: Show a => Ring' a => Floating a => Division a
+cube :: Show a => Ring' a => Floating a => Field a
      => Part '[ '["bottom"], '["top"], '["right"], '["back"],
                         '["left"], '["front"], '["northEast"], '["northWest"],
                         '["southWest"], '["southEast"]] V3' a
@@ -290,7 +290,7 @@ sphere :: Part3 '[] a
 sphere = Part {partVertices = Nil, partBases = Nil
               ,partCode = Prim (SCAD "sphere" [("r","0.5")] [])}
 
-square :: forall a. Module a a => Floating a => Show a => Ring a
+square :: forall a. Module a a => Floating a => Show a => Field a 
        => Part2 (SimpleFields '[East, North, West, South, "northEast", "northWest", "southWest", "southEast"]) a
 square = Part {partVertices = matVecMul <$> partBases <*> (V2 <$> scales <*> pure 0)
               ,partCode = Prim (SCAD "square" [("size","1"),("center","true")] [])
@@ -322,12 +322,12 @@ polygon :: Show a => [V2 a] -> Part2 '[] a
 polygon = polygon' 2
 
 
-extrude :: forall a xs. Division a => Floating a => Module a a => Fractional a => Show a
+extrude :: forall a xs. Field a => Floating a => Module a a => Show a
               => a -> Part2 xs a -> Part3 (SimpleFields '[Nadir,Zenith] ++ xs) a
 extrude height p = extrudeEx height 1 0 p
 
 
-extrudeEx :: forall a xs. Floating a => Division a => Module a a => Fractional a => Show a
+extrudeEx :: forall a xs. Floating a => Field a => Module a a => Show a
               => a -> a -> a -> Part2 xs a -> Part3 (SimpleFields '[Nadir,Zenith] ++ xs) a
 extrudeEx height scaleFactor twist Part{..}
   = Part {partVertices = (flip matVecMul (V3 0 0 (0.5 * height)) <$> botTopBases) ++* (z0 <$> partVertices)
@@ -346,7 +346,7 @@ extrudeEx height scaleFactor twist Part{..}
                         (-1) 0 0
           conv m = transpose (zz0 m) `matMul` zToX `matMul` (zz0 m)
 
-lathe :: (Show a, Division a, Floating a) => Part2 xs a -> Part3 '[] a
+lathe :: (Show a, Field a, Floating a) => Part2 xs a -> Part3 '[] a
 lathe = latheEx Nothing (2*pi)
 
 latheEx :: (Show a, Division a, Floating a) => Maybe Int -> a -> Part2 xs a -> Part3 '[] a
@@ -492,14 +492,10 @@ rotate2d :: (Show s, Floating s, Division s, Module s s) =>
                   s -> Part xs V2' s -> Part xs V2' s
 rotate2d angle = rotate (rotation2d angle)
 
-xAxis :: V3 Double
-xAxis = V3 1 0 0
-
-yAxis :: V3 Double
-yAxis = V3 0 1 0
-
-zAxis :: V3 Double
-zAxis = V3 0 0 1
+xAxis, yAxis, zAxis :: Ring a => V3 a
+xAxis = V3 one zero zero
+yAxis = V3 zero one zero
+zAxis = V3 zero zero one
 
 
 mirrored :: forall v a xs. Module a a => Field a => Applicative v => (Foldable v, Show a) => Euclid v a -> Part xs v a -> Part xs v a
@@ -525,20 +521,18 @@ waterdrop alpha = union circle (scale 0.5 $ polygon [V2 c s, V2 0 (1/s), V2 (-c)
 
 
 -- | Create a mortise
-push :: forall xs ys.
-        Double -> Part2 ys Double -> (Part3 xs Double -> Part3 xs Double)
+push :: forall xs ys a. Floating a => Show a => Ring' a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
 push depth shape =
   unitR @xs #> (difference $ forget $ 
-                translate (V3 0 0 (epsilon - 0.5 * depth)) (extrude (depth+2*epsilon) shape))
-  where epsilon :: Double
+                translate (V3 zero zero (epsilon - 0.5 * depth)) (extrude (depth+2*epsilon) shape))
+  where epsilon :: a
         epsilon = 0.05
 
 -- | Create a tenon
-pull :: forall xs ys a. (a ~ Double)
-       => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
+pull :: forall xs ys a. Module a a => Floating a => Show a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
 pull depth shape = unitR @xs #> union $ forget $ translate (V3 0 0 (0.5 * depth)) (extrude depth shape)
 
-cone' :: (Floating a, Division a, Module a a, Show a) => a -> Part3 '[ '["bottom"], '["top"]] a
+cone' :: (Floating a, Field a, Module a a, Show a) => a -> Part3 '[ '["bottom"], '["top"]] a
 cone' angle = (extrudeEx c 0 0 circle)
   where c = sin angle
 
@@ -668,6 +662,6 @@ renderVec v = showL (map show (toList v))
 showL :: [String] -> String
 showL v = "[" <> intercalate ", " v <> "]"
 
-showAngle :: Show a => Division a => Floating a => a -> String
+showAngle :: Show a => Field a => Floating a => a -> String
 showAngle x = show (x * (180 / pi))
 
