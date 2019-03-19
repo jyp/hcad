@@ -37,6 +37,15 @@ data SCAD = SCAD {scadPrim :: String
                  ,scadArgs :: [(String,String)]
                  ,scadBody :: [SCAD]}
 
+newtype Sq4 a = Sq4 (SqMat V4' a)
+
+instance Functor Sq4 where
+  fmap f (Sq4 m) = Sq4 (f >$< m)
+
+instance Foldable Sq4 where
+  foldMap f (Sq4 (Mat v)) = foldMap (foldMap f) v
+
+
 data Op = Union | Intersection | Hull deriving Show
 data DSC vec a where
   Polygon :: Int -> [V2 a] -> DSC V2' a
@@ -44,10 +53,12 @@ data DSC vec a where
   Color :: Double -> V3 s -> DSC vec s -> DSC vec s
   NOp :: Op -> [DSC vec a] -> DSC vec a
   Difference :: DSC vec a -> DSC vec a -> DSC vec a
-  MultMat :: SqMat V4' a -> DSC vec a -> DSC vec a
+  MultMat :: Sq4 a -> DSC vec a -> DSC vec a
   LExtrude :: a -> a -> a -> DSC V2' a -> DSC V3' a
   RExtrude :: Maybe Int -> a -> DSC V2' a -> DSC V3' a
   Mirror :: Euclid v a -> DSC v a -> DSC v a
+
+deriving instance Foldable vec => Foldable (DSC vec)
 
 type V4' = VNext V3'
 
@@ -91,12 +102,6 @@ class (Traversable v, Applicative v) => ScadV v where
 translate' :: ScadV vec => Traversable vec => Ring a => Applicative vec => Euclid vec a -> DSC vec a -> DSC vec a
 translate' v = multmat'' (translateToMat $ conv3dVec v)
 
--- translate' v (Color a c t) = Color a c (translate' v t)
--- translate' v (NOp op ts) = NOp op (translate' v <$> ts)
--- translate' v (Difference t u) = Difference (translate' v t) (translate' v u)
--- translate' v (Translate v' t) = Translate (v+v') t
--- translate' v t = Translate v t
-
 multmat' :: ScadV vec => Ring a => Traversable vec => Applicative vec => SqMat vec a -> DSC vec a -> DSC vec a
 multmat' = multmat'' . homMat
 
@@ -104,9 +109,8 @@ multmat'' :: Ring a => Traversable vec => Applicative vec => SqMat V4' a -> DSC 
 multmat'' v (Color a c t) = Color a c (multmat'' v t)
 multmat'' v (NOp op ts) = NOp op (multmat'' v <$> ts)
 multmat'' v (Difference t u) = Difference (multmat'' v t) (multmat'' v u)
-multmat'' v (MultMat v' t) = MultMat (matMul v' v) t
-multmat'' v t = MultMat v t
--- multmat' v (Translate v' t) = MultMat (matMul (translateToMat v') v) t
+multmat'' v (MultMat (Sq4 v') t) = MultMat (Sq4 (matMul v' v)) t
+multmat'' v t = MultMat (Sq4 v) t
 
 convexity :: DSC vec a -> Int
 convexity = \case
@@ -120,7 +124,7 @@ convexity = \case
   (NOp _ rs) -> sum (map convexity rs)
   Mirror _ r -> convexity r
   RExtrude {} -> 10
-  
+
 toSCAD :: Foldable vec => Functor vec => Floating a => Division a => Show a => DSC vec a -> SCAD
 toSCAD = \case
   Mirror normal r -> SCAD "mirror" [("v",renderVec normal)] [toSCAD r]
@@ -133,7 +137,7 @@ toSCAD = \case
       ,("convexity",show (convexity partCode))
       ,("scale",show scaleFactor)
       ,("twist",showAngle twist)] [toSCAD partCode])
-  MultMat m r -> SCAD "multmatrix" [("m",m')] [toSCAD r]
+  MultMat (Sq4 m) r -> SCAD "multmatrix" [("m",m')] [toSCAD r]
     where m' = showL (toList (showL . toList . (fmap show) <$> fromMat m))
   Polygon _ points -> SCAD "polygon" [("points",showL (map renderVec points))] []
   Prim p -> p
