@@ -121,6 +121,7 @@ convexity = \case
   (Prim _) -> 2
   (Color _ _ r) -> convexity r
   (NOp Hull _) -> 2
+  (NOp Intersection rs) -> maximum (map convexity rs)
   (NOp _ rs) -> sum (map convexity rs)
   Mirror _ r -> convexity r
   RExtrude {} -> 10
@@ -501,6 +502,9 @@ zAxis = V3 zero zero one
 mirrored :: forall v a xs. Module a a => Field a => Applicative v => (Foldable v, Show a) => Euclid v a -> Part xs v a -> Part xs v a
 mirrored axis part = unitR @xs #> union (forget $ mirror axis part) part
 
+mirroring :: (Applicative v, Field a, Module a a, Foldable v, Show a) =>
+             Euclid v a -> (Part xs v a -> Part xs v a) -> Part xs v a -> Part xs v a
+mirroring axis f = mirror axis . f . mirror axis . f
 
 -- | Regular polygon contained a unit-diameter circle.
 regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part2 '[] a
@@ -530,7 +534,9 @@ push depth shape =
 
 -- | Create a tenon
 pull :: forall xs ys a. Module a a => Floating a => Show a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
-pull depth shape = unitR @xs #> union $ forget $ translate (V3 0 0 (0.5 * depth)) (extrude depth shape)
+pull depth shape = unitR @xs #> union $ forget $ translate (V3 0 0 (0.5 * depth - epsilon)) (extrude depth shape)
+  where epsilon :: a
+        epsilon = 0.05
 
 cone' :: (Floating a, Field a, Module a a, Show a) => a -> Part3 '[ '["bottom"], '["top"]] a
 cone' angle = (extrudeEx c 0 0 circle)

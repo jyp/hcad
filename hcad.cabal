@@ -12,10 +12,12 @@ build-type:     Simple
 library
   build-depends: base < 666
                , gasp
+               , containers
                -- , glpk-hs
                , mtl
   exposed-modules: HCad
                  , HCad.Part
                  , HCad.SCAD
+                 , HCad.Expr
 
   default-language:    Haskell2010

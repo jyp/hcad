@@ -17,10 +17,11 @@
 module HCad.SCAD where
 
 import HCad.Part
-import Data.List (intercalate)
+import HCad.Expr
+import Data.List (intercalate, nub)
 -- import Algebra.Linear
-
-
+import Data.Set (Set)
+import qualified Data.Set as Set
 data Options = Options {optFn :: Int}
 
 defaultOptions :: Options
@@ -30,6 +31,19 @@ render :: Functor v => Foldable v => Options -> Part xs v Double -> String
 render Options{..} p = unlines (("$fn="++show optFn++";"):
                                 renderCode (toSCAD $ partCode p)++
                                 [";"])
+
+renderP :: Functor v => Foldable v => Options -> Part xs v Expr -> String
+renderP Options{..} p = unlines (("$fn="++show optFn++";"):
+                                 concat [["// " ++ paramComment
+                                         ,paramName ++ " = " ++ show paramDefault ++ "; "
+                                          ++ "// " ++ v (paramPossible)]
+                                        | Parameter{..} <- Set.toList ps ] ++
+                                 renderCode (toSCAD $ partCode p) ++
+                                 [";"])
+  where ps :: Set Parameter
+        ps = foldMap params (partCode p)
+        v (PRange lo hi) = "["++show lo++":"++ show hi ++"]"
+        v (PSet vals) = show vals
 
 
 renderCode :: SCAD -> [String]
