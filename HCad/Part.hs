@@ -552,21 +552,22 @@ counterSink angle diameter = unitR @xs #> difference (forget negative)  where
 ----------------------------------
 -- Filling
 
-linearRepeat' :: ScadV v => Ring s => (Show s, Module Int s) =>
+linearRepeat' :: ScadV v => Ring s => Show s =>
                 Int -> [Euclid v s] -> Part xs v s -> Part '[] v s
 linearRepeat' number intervals part =
-  unions [translate (k *^ (intervals !! k) + j *^ add intervals) part
+  unions [translate (mult (fromIntegral k) (intervals !! k) +
+                     mult (fromIntegral j) (add intervals)) part
          | i <- [negate number `div` 2..number `div` 2],
            let (j,k) = i `divMod` length intervals
          ]
 
-linearRepeat :: ScadV v => Ring s => (Show s, Module Int s) =>
+linearRepeat :: forall s v xs. ScadV v => Ring' s => Show s =>  Field s =>
                 Int -> Euclid v s -> Part xs v s -> Part '[] v s
 linearRepeat number interval part =
-  unions [translate (i *^ interval) part
-         | i <- [negate number `div` 2..number `div` 2]]
+  unions [translate ((shift + mult (fromIntegral i) interval)) part | i <- [negate number `div` 2..number `div` 2]]
+  where shift = if number `mod` 2 == 1 then (fromRational 0.5::s) *^ interval else zero
 
-linearFill :: (ScadV v, Show s, RealFrac s, Floating s, Field s, Ring' s, Module Int s) =>
+linearFill :: (ScadV v, Show s, RealFrac s, Floating s, Field s, Ring' s) =>
                     s -> Euclid v s -> Part xs v s -> Part '[] v s
 linearFill len interval part = linearRepeat (floor (len / norm interval)) interval part
 
