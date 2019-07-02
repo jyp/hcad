@@ -25,7 +25,8 @@ module HCad.Part where
 
 import Algebra.Linear
 import Algebra.Classes
-import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational)
+import Algebra.Category
+import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id)
 import Data.Foldable
 import GHC.TypeLits
 import Data.List (intercalate)
@@ -76,6 +77,7 @@ unions'' [] = []
 unions'' (Uni xs:ys) = unions'' (xs++ys)
 unions'' (x:xs) = x:unions'' xs
 
+-- | add one dimension to the argument (the extra dimension is "diagonal")
 addOneMat :: (Ring s, Applicative v, Applicative v) => Mat s v v -> Mat s (VNext v) (VNext v)
 addOneMat (Mat vs) = Mat (VNext (VNext <$> vs <*> pure zero) (VNext (pure zero) one)) 
 
@@ -109,7 +111,7 @@ multmat'' :: Ring a => Traversable vec => Applicative vec => SqMat V4' a -> DSC 
 multmat'' v (Color a c t) = Color a c (multmat'' v t)
 multmat'' v (NOp op ts) = NOp op (multmat'' v <$> ts)
 multmat'' v (Difference t u) = Difference (multmat'' v t) (multmat'' v u)
-multmat'' v (MultMat (Sq4 v') t) = MultMat (Sq4 (matMul v' v)) t
+multmat'' v (MultMat (Sq4 v') t) = MultMat (Sq4 (v' . v)) t
 multmat'' v t = MultMat (Sq4 v) t
 
 convexity :: DSC vec a -> Int
@@ -345,7 +347,7 @@ extrudeEx height scaleFactor twist Part{..}
           zToX = Mat3x3 0 0 1
                         0 1 0
                         (-1) 0 0
-          conv m = transpose (zz0 m) `matMul` zToX `matMul` (zz0 m)
+          conv m = transpose (zz0 m) . zToX . (zz0 m)
 
 lathe :: (Show a, Field a, Floating a) => Part2 xs a -> Part3 '[] a
 lathe = latheEx Nothing (2*pi)
@@ -406,7 +408,7 @@ translate v Part{..} = Part {partBases = partBases
 
 rotate :: ScadV v => Traversable v => Applicative v => Show s => Floating s => Division s => Module s s => Ring s => SqMat v s -> Part xs v s -> Part xs v s
 rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
-                         ,partBases = (\subBase -> m `matMul`subBase ) <$>  partBases
+                         ,partBases = (\subBase -> m . subBase ) <$>  partBases
                          ,partCode = multmat' m partCode}
 
 
