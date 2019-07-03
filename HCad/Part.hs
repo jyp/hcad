@@ -283,7 +283,7 @@ color' a c Part{..} = Part {partCode = Color a c partCode
 color :: (Show s) => V3 s -> Part xs vec s -> Part xs vec s
 color = color' 1
 
-cube :: Show a => Ring' a => Floating a => Field a
+cube :: Show a => Floating a => Field a
      => Part '[ '["bottom"], '["top"], '["right"], '["back"],
                         '["left"], '["front"], '["northEast"], '["northWest"],
                         '["southWest"], '["southEast"]] V3' a
@@ -412,7 +412,7 @@ rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
                          ,partCode = multmat' m partCode}
 
 
-mirror :: forall a v xs. Applicative v => Field a => Ring' a => Foldable v => Show a => Euclid v a -> Part xs v a -> Part xs v a
+mirror :: forall a v xs. Applicative v => Field a => Ring a => Foldable v => Show a => Euclid v a -> Part xs v a -> Part xs v a
 mirror normal Part{..}
   = Part {partBases = mm <$> partBases
          ,partVertices = m <$> partVertices
@@ -491,7 +491,7 @@ center getX p = translate (negate (locPoint (getX p))) p
 ------------------------------------------------
 -- Non-primitive ops
 
-rotate2d :: (Show s, Floating s, Division s, Module s s) =>
+rotate2d :: (Show s, Floating s, Field s) =>
                   s -> Part xs V2' s -> Part xs V2' s
 rotate2d angle = rotate (rotation2d angle)
 
@@ -525,9 +525,8 @@ waterdrop alpha = union circle (scale 0.5 $ polygon [V2 c s, V2 0 (1/s), V2 (-c)
   where s = sin alpha
         c = cos alpha
 
-
 -- | Create a mortise
-push :: forall xs ys a. Floating a => Show a => Ring' a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
+push :: forall xs ys a. Floating a => Show a => Ring a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
 push depth shape =
   unitR @xs #> (difference $ forget $ 
                 translate (V3 zero zero (epsilon - 0.5 * depth)) (extrude (depth+2*epsilon) shape))
@@ -563,13 +562,13 @@ linearRepeat' number intervals part =
            let (j,k) = i `divMod` length intervals
          ]
 
-linearRepeat :: forall s v xs. ScadV v => Ring' s => Show s =>  Field s =>
+linearRepeat :: forall s v xs. ScadV v => Show s =>  Field s =>
                 Int -> Euclid v s -> Part xs v s -> Part '[] v s
 linearRepeat number interval part =
   unions [translate ((shift + mult (fromIntegral i) interval)) part | i <- [negate number `div` 2..number `div` 2]]
   where shift = if number `mod` 2 == 1 then (fromRational 0.5::s) *^ interval else zero
 
-linearFill :: (ScadV v, Show s, RealFrac s, Floating s, Field s, Ring' s) =>
+linearFill :: (ScadV v, Show s, RealFrac s, Floating s, Field s, Ring s) =>
                     s -> Euclid v s -> Part xs v s -> Part '[] v s
 linearFill len interval part = linearRepeat (floor (len / norm interval)) interval part
 
