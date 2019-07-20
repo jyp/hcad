@@ -519,6 +519,23 @@ regularPolygon order = scale 0.5 (polygon coords)
 regularPolygonO :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part2 '[] a
 regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolygon order
 
+epsilon :: Field a => a
+epsilon = 0.001
+
+rectangleWithChamferCorners :: Show a => Field a => a -> Euclid V2' a -> Part '[] V2' a
+rectangleWithChamferCorners r (V2 w h) =
+  mirrored (V2 1 0) $
+  mirrored (V2 0 1) $
+  polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
+
+rectangleWithRounderCorners :: Show a => Field a => a -> Euclid V2' a -> Part '[] V2' a
+rectangleWithRounderCorners r (V2 w h) =
+  mirrored (V2 1 0) $
+  mirrored (V2 0 1) $
+  union (translate (V2 (w/2-r) (h/2-r)) $ scale (2*r) $ circle) $
+  polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
+
+
 -- | A circle with an angular top. The argument is the top angle; often pi/2 or pi/3
 waterdrop :: Field a => (Division a, Group a, Floating a, Show a) => a -> Part2 '[] a
 waterdrop alpha = union circle (scale 0.5 $ polygon [V2 c s, V2 0 (1/s), V2 (-c) s])
