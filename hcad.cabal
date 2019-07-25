@@ -17,6 +17,7 @@ library
                , mtl
   exposed-modules: HCad
                  , HCad.Part
+                 , HCad.Part.Extensions
                  , HCad.SCAD
                  , HCad.Expr
                  , HCad.Nuts
