@@ -34,6 +34,7 @@ import Data.Kind (Type)
 import Data.Type.Equality
 import Unsafe.Coerce
 import Data.Char (toLower)
+import qualified Data.Set as Set
 
 data SCAD = SCAD {scadPrim :: String
                  ,scadArgs :: [(String,String)]
@@ -50,6 +51,7 @@ instance Foldable Sq4 where
 data Op = Union | Intersection | Hull deriving Show
 data DSC vec a where
   Polygon :: Int -> [V2 a] -> DSC V2' a
+  Polyhedron :: Int -> [V3 a] -> [[Int]] -> DSC V3' a
   Prim :: SCAD -> DSC vec a
   Color :: Double -> V3 s -> DSC vec s -> DSC vec s
   NOp :: Op -> [DSC vec a] -> DSC vec a
@@ -120,6 +122,7 @@ convexity = \case
   (MultMat _ r) -> convexity r
   (LExtrude _ _ _ r) -> convexity r
   (Polygon convex _) -> convex
+  (Polyhedron convex _ _) -> convex
   (Prim _) -> 2
   (Color _ _ r) -> convexity r
   (NOp Hull _) -> 2
@@ -143,6 +146,8 @@ toSCAD = \case
   MultMat (Sq4 m) r -> SCAD "multmatrix" [("m",m')] [toSCAD r]
     where m' = showL (toList (showL . toList . (fmap show) <$> fromMat m))
   Polygon _ points -> SCAD "polygon" [("points",showL (map renderVec points))] []
+  Polyhedron _ points faces -> SCAD "polyhedron" [("points",showL (map renderVec points))
+                                                 ,("faces",showL $ map (showL . map show) $ faces)] []
   Prim p -> p
   NOp op rs -> SCAD (map toLower $ show op) [] (map toSCAD rs)
   Difference r1 r2 -> SCAD "difference" [] [toSCAD r1, toSCAD r2]
@@ -324,6 +329,16 @@ polygon' convex points
 polygon :: Show a => [V2 a] -> Part2 '[] a
 polygon = polygon' 2
 
+tessalateFace :: [a] -> [[a]]
+tessalateFace [x,y,z] = [[x,y,z]]
+tessalateFace (a:b:c:vs) = [a,b,c]:tessalateFace (a:c:vs)
+
+-- | List of faces. Points in a faces must be coplanar, and going
+-- clockwise when looking from outside. Faces must form a closed polyhedron.
+polyhedron :: Ord a => [[V3 a]] -> Part3 '[] a
+polyhedron faces = Part {partVertices=Nil, partBases=Nil,partCode = Polyhedron 1 (toList vertices) faces'}
+  where vertices = Set.fromList (concat faces)
+        faces' = concatMap tessalateFace $ map (map (flip Set.findIndex vertices)) $ faces
 
 extrude :: forall a xs. Field a => Floating a => Module a a => Show a
               => a -> Part2 xs a -> Part3 (SimpleFields '[Nadir,Zenith] ++ xs) a
