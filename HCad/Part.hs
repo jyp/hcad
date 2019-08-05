@@ -423,7 +423,7 @@ translate v Part{..} = Part {partBases = partBases
 
 rotate :: ScadV v => Traversable v => Applicative v => Show s => Floating s => Division s => Module s s => Ring s => SqMat v s -> Part xs v s -> Part xs v s
 rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
-                         ,partBases = (\subBase -> m . subBase ) <$>  partBases
+                         ,partBases = (. m) <$>  partBases
                          ,partCode = multmat' m partCode}
 
 
