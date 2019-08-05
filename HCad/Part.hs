@@ -501,7 +501,9 @@ on relLoc f body = translating locPoint (rotating locBase f) body
 center :: ScadV v => Ring a => Show a => RelLoc xs v a -> Part xs v a -> Part xs v a
 center getX p = translate (negate (locPoint (getX p))) p
 
-
+-- | Shift and rotate part to the given location
+withLoc :: Floating a => Show a => Field a => ScadV v => Loc v a -> Part xs v a -> Part xs v a
+withLoc Loc{..} = translate locPoint . rotate locBase
 
 ------------------------------------------------
 -- Non-primitive ops
