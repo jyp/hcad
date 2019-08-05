@@ -405,6 +405,11 @@ hull p2 p1 = Part {partVertices = partVertices p1 ++* partVertices p2
                           ,partBases = partBases p1 ++* partBases p2
                           ,partCode = NOp Hull [partCode p1,partCode p2]}
 
+hulls ::  [Part xs v a] -> Part '[] v a
+hulls ps = Part {partVertices = Nil
+                ,partBases = Nil
+                ,partCode = NOp Hull (map partCode ps)}
+
 (/-) :: Part xs v a -> Part ys v a -> Part (xs ++ ys) v a
 (/-) p1 p2 = Part {partVertices = partVertices p1 ++* partVertices p2
                    ,partBases = partBases p1 ++* partBases p2
