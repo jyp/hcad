@@ -544,18 +544,25 @@ regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolyg
 epsilon :: Field a => a
 epsilon = 0.001
 
-rectangleWithChamferCorners :: Show a => Field a => a -> Euclid V2' a -> Part '[] V2' a
-rectangleWithChamferCorners r (V2 w h) =
-  mirrored (V2 1 0) $
-  mirrored (V2 0 1) $
-  polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
+rectangleWithChamferCorners :: Floating a => Show a => Field a => a -> Euclid V2' a -> Part ('[ '["right"], '["back"], '["left"], '["front"],
+                         '["northEast"], '["northWest"], '["southWest"],
+                         '["southEast"]]) V2' a
+rectangleWithChamferCorners r sz@(V2 w h) = rect {partCode = code}
+  where rect = rectangle sz 
+        code = partCode $
+          mirrored (V2 1 0) $
+          mirrored (V2 0 1) $
+          polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
 
-rectangleWithRounderCorners :: Show a => Field a => a -> Euclid V2' a -> Part '[] V2' a
-rectangleWithRounderCorners r (V2 w h) =
+
+rectangleWithRounderCorners :: Floating a => Show a => Field a => a -> Euclid V2' a -> Part ('[ '["right"], '["back"], '["left"], '["front"],
+                         '["northEast"], '["northWest"], '["southWest"],
+                         '["southEast"]]) V2' a
+rectangleWithRounderCorners r sz@(V2 w h) =
   mirrored (V2 1 0) $
   mirrored (V2 0 1) $
   union (translate (V2 (w/2-r) (h/2-r)) $ scale (2*r) $ circle) $
-  polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
+  rectangleWithChamferCorners r sz
 
 
 -- | A circle with an angular top. The argument is the top angle; often pi/2 or pi/3
