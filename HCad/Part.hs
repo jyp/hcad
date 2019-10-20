@@ -555,10 +555,10 @@ rectangleWithChamferCorners r sz@(V2 w h) = rect {partCode = code}
           polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
 
 
-rectangleWithRounderCorners :: Floating a => Show a => Field a => a -> Euclid V2' a -> Part ('[ '["right"], '["back"], '["left"], '["front"],
+rectangleWithRoundedCorners :: Floating a => Show a => Field a => a -> Euclid V2' a -> Part ('[ '["right"], '["back"], '["left"], '["front"],
                          '["northEast"], '["northWest"], '["southWest"],
                          '["southEast"]]) V2' a
-rectangleWithRounderCorners r sz@(V2 w h) =
+rectangleWithRoundedCorners r sz@(V2 w h) =
   mirrored (V2 1 0) $
   mirrored (V2 0 1) $
   union (translate (V2 (w/2-r) (h/2-r)) $ scale (2*r) $ circle) $
