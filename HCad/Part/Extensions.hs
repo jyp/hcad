@@ -31,19 +31,18 @@ import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id)
 -- will align with the upwards direction given. This function may
 -- crash if the segment is itself too well aligned with the segment.
 extrudeAlongSegment :: (Show a,Floating a, Field a)
-  => Part xs V2' a -- ^ shape
+  => Part xs V2 a -- ^ shape
   -> V3 a -- ^ upwards direction
   -> (V3 a, V3 a) -- ^ segment
-  -> Part (SimpleFields '[Nadir,Zenith] ++ xs) V3' a
+  -> Part (SimpleFields '[Nadir,Zenith] ++ xs) V3 a
 extrudeAlongSegment shape upDir (start,end) = translate start $ rotate r $ center nadir $ extrude l shape
-  where r = transpose $ Mat (fromEuclid <$> (V3' x' (x' × z') z'))
+  where r = transpose $ Mat (V3 x' (x' × z') z')
         l = norm d
         d = end-start
         z' = normalize d
         x' = normalize (upDir × z')
--- >>> main
 
 -- | Apply 'extrudeAlongSegment' on several segments
 extrudeAlongSegments :: (Show a, Floating a, Field a)
-  => Part xs V2' a -> V3 a -> [(V3 a, V3 a)] -> Part '[] V3' a
+  => Part xs V2 a -> V3 a -> [(V3 a, V3 a)] -> Part '[] V3 a
 extrudeAlongSegments shape upDir = unions . map (extrudeAlongSegment shape upDir)

@@ -26,13 +26,6 @@ module HCad.Nuts where
 import Algebra.Linear
 import Algebra.Classes
 import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational)
-import Data.Foldable
-import GHC.TypeLits
-import Data.List (intercalate)
-import Data.Kind (Type)
-import Data.Type.Equality
-import Unsafe.Coerce
-import Data.Char (toLower)
 import HCad.Part
 
 data MNut a = MNut { mSize :: a
@@ -66,11 +59,11 @@ m64   = MNut 64     6       95      92.8     51      49.1
 
 
 
-metricNutProfile :: Floating a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2' a
+metricNutProfile :: Floating a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2 a
 metricNutProfile nut tol = scale flat2flat $ regularPolygonO 6
   where flat2flat = mMaxFlatsDist nut + tol
 
-metricBoltProfile :: Floating a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2' a
+metricBoltProfile :: Floating a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2 a
 metricBoltProfile m tol = scale (mSize m + tol) $ circle
 
 metricNutSocket :: (Floating a, Show a, Module a a, Field a) => MNut a -> a -> a -> a -> Part3 xs a -> Part3 xs a
