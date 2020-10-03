@@ -23,7 +23,7 @@
 {-# LANGUAGE RebindableSyntax #-}
 module HCad.Part where
 
-import Algebra.Linear hiding ((*<))
+import Algebra.Linear
 import Algebra.Classes
 import Algebra.Category
 import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id)
