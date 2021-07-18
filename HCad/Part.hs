@@ -26,8 +26,8 @@ module HCad.Part where
 import Algebra.Linear
 import Algebra.Classes
 import Algebra.Category
-import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id)
-import Data.Foldable
+import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id, sum)
+import Data.Foldable hiding (sum)
 import GHC.TypeLits
 import Data.List (intercalate)
 import Data.Kind (Type)
@@ -599,7 +599,7 @@ linearRepeat' :: ScadV v => Ring s => Show s => Group (v s) =>
                 Int -> [v s] -> Part xs v s -> Part '[] v s
 linearRepeat' number intervals part =
   unions [translate (mult (fromIntegral k) (intervals !! k) +
-                     mult (fromIntegral j) (add intervals)) part
+                     mult (fromIntegral j) (sum intervals)) part
          | i <- [negate number `div` 2..number `div` 2],
            let (j,k) = i `divMod` length intervals
          ]
