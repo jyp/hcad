@@ -30,7 +30,7 @@ import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id)
 -- | Extrude a shape along a givent segment. The y axis of the shape
 -- will align with the upwards direction given. This function may
 -- crash if the segment is itself too well aligned with the segment.
-extrudeAlongSegment :: (Show a,Floating a, Field a)
+extrudeAlongSegment :: (Show a,Transcendental a)
   => Part xs V2 a -- ^ shape
   -> V3 a -- ^ upwards direction
   -> (V3 a, V3 a) -- ^ segment
@@ -43,6 +43,6 @@ extrudeAlongSegment shape upDir (start,end) = translate start $ rotate r $ cente
         x' = normalize (upDir × z')
 
 -- | Apply 'extrudeAlongSegment' on several segments
-extrudeAlongSegments :: (Show a, Floating a, Field a)
+extrudeAlongSegments :: (Show a, Transcendental a)
   => Part xs V2 a -> V3 a -> [(V3 a, V3 a)] -> Part '[] V3 a
 extrudeAlongSegments shape upDir = unions . map (extrudeAlongSegment shape upDir)

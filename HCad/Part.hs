@@ -26,7 +26,7 @@ module HCad.Part where
 import Algebra.Linear
 import Algebra.Classes
 import Algebra.Category
-import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id, sum)
+import Prelude hiding (Num(..),(/),divMod,div,recip,fromRational, (.), mod, id, sum,Floating(..))
 import Data.Foldable hiding (sum)
 import GHC.TypeLits
 import Data.List (intercalate)
@@ -129,7 +129,7 @@ convexity = \case
   Mirror _ r -> convexity r
   RExtrude {} -> 10
 
-toSCAD :: Foldable vec => Functor vec => Floating a => Field a => Show a => DSC vec a -> SCAD
+toSCAD :: Foldable vec => Functor vec => Transcendental a => Field a => Show a => DSC vec a -> SCAD
 toSCAD = \case
   Mirror normal r -> SCAD "mirror" [("v",renderVec normal)] [toSCAD r]
   RExtrude fn angle partCode ->
@@ -286,7 +286,7 @@ color' a c Part{..} = Part {partCode = Color a c partCode
 color :: (Show s) => V3 s -> Part xs vec s -> Part xs vec s
 color = color' 1
 
-cube :: Show a => Floating a => Field a
+cube :: Show a => Transcendental a => Field a
      => Part3 '[ '["bottom"], '["top"], '["right"], '["back"],
                         '["left"], '["front"], '["northEast"], '["northWest"],
                         '["southWest"], '["southEast"]] a
@@ -296,7 +296,7 @@ sphere :: Part3 '[] a
 sphere = Part {partVertices = Nil, partBases = Nil
               ,partCode = Prim (SCAD "sphere" [("r","0.5")] [])}
 
-square :: forall a. Module a a => Floating a => Show a => Field a 
+square :: forall a. Show a => Transcendental a 
        => Part2 (SimpleFields '[East, North, West, South, "northEast", "northWest", "southWest", "southEast"]) a
 square = Part {partVertices = matVecMul <$> partBases <*> (V2 <$> scales <*> pure 0)
               ,partCode = Prim (SCAD "square" [("size","1"),("center","true")] [])
@@ -305,7 +305,7 @@ square = Part {partVertices = matVecMul <$> partBases <*> (V2 <$> scales <*> pur
         scales = 0.5 :* 0.5 :* 0.5 :* 0.5 :* sqrt 0.5 :* sqrt 0.5 :* sqrt 0.5 :* sqrt 0.5 :* Nil
         angles = (pi *) <$> (0   :* 0.5 :* 1   :* 1.5 :* 0.25     :* 0.75     :* 1.25     :* 1.75     :* Nil)
 
-rectangle :: (Field s, Show s, Module s s, Floating s) => V2 s
+rectangle :: (Transcendental s, Show s, Module s s) => V2 s
                    -> Part
                         '[ '["right"], '["back"], '["left"], '["front"], '["northEast"],
                           '["northWest"], '["southWest"], '["southEast"]]
@@ -336,12 +336,12 @@ polyhedron faces = Part {partVertices=Nil, partBases=Nil,partCode = Polyhedron 1
   where vertices = Set.fromList (concat faces)
         faces' = concatMap tessalateFace $ map (map (flip Set.findIndex vertices)) $ faces
 
-extrude :: forall a xs. Field a => Floating a => Module a a => Show a
+extrude :: forall a xs. Transcendental a => Module a a => Show a
               => a -> Part2 xs a -> Part3 (SimpleFields '[Nadir,Zenith] ++ xs) a
 extrude height p = extrudeEx height 1 0 p
 
 
-extrudeEx :: forall a xs. Floating a => Field a => Module a a => Show a
+extrudeEx :: forall a xs. Roots a => Transcendental a => Module a a => Show a
               => a -> a -> a -> Part2 xs a -> Part3 (SimpleFields '[Nadir,Zenith] ++ xs) a
 extrudeEx height scaleFactor twist Part{..}
   = Part {partVertices = (flip matVecMul (V3 0 0 (0.5 * height)) <$> botTopBases) ++* (z0 <$> partVertices)
@@ -360,10 +360,10 @@ extrudeEx height scaleFactor twist Part{..}
                         (-1) 0 0
           conv m = zz0 m . zToX . transpose (zz0 m)
 
-lathe :: (Show a, Field a, Floating a) => Part2 xs a -> Part3 '[] a
+lathe :: (Show a, Transcendental a, Roots a) => Part2 xs a -> Part3 '[] a
 lathe = latheEx Nothing (2*pi)
 
-latheEx :: (Show a, Division a, Floating a) => Maybe Int -> a -> Part2 xs a -> Part3 '[] a
+latheEx :: (Show a, Division a, Roots a) => Maybe Int -> a -> Part2 xs a -> Part3 '[] a
 latheEx fn angle Part{..} =
   Part {partVertices = Nil,
         partBases = Nil,
@@ -422,7 +422,7 @@ translate v Part{..} = Part {partBases = partBases
                             ,partCode = translate' v partCode
                             }
 
-rotate :: ScadV v => Traversable v => Applicative v => Show s => Floating s => Division s => Module s s => Ring s => SqMat v s -> Part xs v s -> Part xs v s
+rotate :: ScadV v => Traversable v => Applicative v => Show s => Division s => Module s s => Ring s => SqMat v s -> Part xs v s -> Part xs v s
 rotate m Part{..} = Part {partVertices = matVecMul m <$> partVertices
                          ,partBases = (m .) <$>  partBases
                          ,partCode = multmat' m partCode}
@@ -446,8 +446,10 @@ scale' v Part{..} = Part {partBases = partBases -- FIXME: shear the base!
                          ,partVertices = (v ⊙) <$> partVertices
                          ,partCode = multmat' (diagonal v) partCode }
 
-scale :: (ScadV v, Field s, Show s) => s -> Part xs v s -> Part xs v s
-scale s = scale' (pure s)
+scale0 :: (ScadV v, Field s, Show s) => s -> Part xs v s -> Part xs v s
+scale0 s = scale' (pure s)
+
+instance (ScadV v, Field s, Show s) => Scalable s (Part xs v s) where (*^) = scale0
 
 ------------------------------------------------
 -- Locations and relative locations
@@ -485,7 +487,7 @@ translating delta f = translate delta . f . translate (negate delta)
 -- atXY f = at (projectOnPlane origin . f)
 
 
-rotating :: ScadV v => (Show s, Floating s, Field s, Module s s) =>
+rotating :: ScadV v => (Show s, Field s, Module s s) =>
                       SqMat v s
                       -> (Part xs1 v s -> Part xs2 v s)
                       -> Part xs1 v s
@@ -493,7 +495,7 @@ rotating :: ScadV v => (Show s, Floating s, Field s, Module s s) =>
 rotating o f = rotate o . f . rotate (transpose o)
 
 -- | Put the focus point on the given locus
-on :: ScadV v => Group (v a) => Division a => Module a a => Floating a => Field a => Show a
+on :: ScadV v => Group (v a) => Division a => Module a a => Field a => Show a
    => RelLoc xs v a -> (Part xs v a -> Part ys v a) -> (Part xs v a -> Part ys v a)
 on relLoc f body = translating locPoint (rotating locBase f) body
   where Loc{..} = relLoc body
@@ -503,13 +505,13 @@ center :: ScadV v => Ring a => Show a => Group (v a) => RelLoc xs v a -> Part xs
 center getX p = translate (negate (locPoint (getX p))) p
 
 -- | Shift and rotate part to the given location
-withLoc :: Floating a => Show a => Field a => ScadV v => Group (v a) => Loc v a -> Part xs v a -> Part xs v a
+withLoc :: Show a => Field a => ScadV v => Group (v a) => Loc v a -> Part xs v a -> Part xs v a
 withLoc Loc{..} = translate locPoint . rotate locBase
 
 ------------------------------------------------
 -- Non-primitive ops
 
-rotate2d :: (Show s, Floating s, Field s) =>
+rotate2d :: (Show s, Transcendental s) =>
                   s -> Part2 xs s -> Part2 xs s
 rotate2d angle = rotate (rotation2d angle)
 
@@ -527,20 +529,25 @@ mirroring :: (InnerProdSpace v,VectorSpace a (v a), Show a) =>
 mirroring axis f = mirror axis . f . mirror axis . f
 
 -- | Regular polygon contained a unit-diameter circle.
-regularPolygon :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part2 '[] a
-regularPolygon order = scale 0.5 (polygon coords)
+regularPolygon :: forall a. Transcendental a => Show a => Int -> Part2 '[] a
+regularPolygon order = scale (0.5::a) (polygon coords)
   where coords=[V2 (cos th) (sin th)
                | i <- [0..order-1],
-                 let th = fromIntegral i*(2.0*pi/fromIntegral order) ];
+                 let th = fromInt i*(2.0*pi/fromInt order) ];
+
+fromInt :: Ring a => Int -> a
+fromInt = fromInteger . fromIntegral 
 
 -- | Regular polygon containing a unit-diameter circle.
-regularPolygonO :: Field a => Module a a => Division a => Floating a => Show a => Int -> Part2 '[] a
-regularPolygonO order = scale (1 / cos (pi / fromIntegral order)) $ regularPolygon order
+regularPolygonO :: forall a. Transcendental a
+  => Show a => Int -> Part2 '[] a
+regularPolygonO order = scale (1 / cos (pi / fromInt order) :: a) $ regularPolygon order
 
 epsilon :: Field a => a
 epsilon = 0.001
 
-rectangleWithChamferCorners :: Floating a => Show a => Field a => a -> V2 a -> Part2 ('[ '["right"], '["back"], '["left"], '["front"],
+rectangleWithChamferCorners :: Show a => Transcendental a
+  => a -> V2 a -> Part2 ('[ '["right"], '["back"], '["left"], '["front"],
                          '["northEast"], '["northWest"], '["southWest"],
                          '["southEast"]]) a
 rectangleWithChamferCorners r sz@(V2 w h) = rect {partCode = code}
@@ -551,9 +558,10 @@ rectangleWithChamferCorners r sz@(V2 w h) = rect {partCode = code}
           polygon [V2 (-epsilon) (-epsilon), V2 (-epsilon) (h/2), V2 (w/2-r) (h/2), V2 (w/2) (h/2-r), V2 (w/2) (-epsilon) ]
 
 
-rectangleWithRoundedCorners :: Floating a => Show a => Field a => a -> Euclid V2' a -> Part2 ('[ '["right"], '["back"], '["left"], '["front"],
-                         '["northEast"], '["northWest"], '["southWest"],
-                         '["southEast"]]) a
+rectangleWithRoundedCorners :: Transcendental a => Show a
+  => a -> Euclid V2' a -> Part2 ('[ '["right"], '["back"], '["left"], '["front"],
+                                    '["northEast"], '["northWest"], '["southWest"],
+                                    '["southEast"]]) a
 rectangleWithRoundedCorners r sz@(V2 w h) =
   mirrored (V2 1 0) $
   mirrored (V2 0 1) $
@@ -562,13 +570,13 @@ rectangleWithRoundedCorners r sz@(V2 w h) =
 
 
 -- | A circle with an angular top. The argument is the top angle; often pi/2 or pi/3
-waterdrop :: Field a => (Division a, Group a, Floating a, Show a) => a -> Part2 '[] a
-waterdrop alpha = union circle (scale 0.5 $ polygon [V2 c s, V2 0 (1/s), V2 (-c) s])
+waterdrop :: forall a. Transcendental a => (Show a) => a -> Part2 '[] a
+waterdrop alpha = union circle (scale (0.5::a) $ polygon [V2 c s, V2 0 (1/s), V2 (-c) s])
   where s = sin alpha
         c = cos alpha
 
 -- | Create a mortise
-push :: forall xs ys a. Floating a => Show a => Ring a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
+push :: forall xs ys a. Show a => Transcendental a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
 push depth shape =
   unitR @xs #> (difference $ forget $ 
                 translate (V3 zero zero (epsilon - 0.5 * depth)) (extrude (depth+2*epsilon) shape))
@@ -576,17 +584,17 @@ push depth shape =
         epsilon = 0.05
 
 -- | Create a tenon
-pull :: forall xs ys a. Module a a => Floating a => Show a => Field a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
+pull :: forall xs ys a. Module a a => Show a => Transcendental a => a -> Part2 ys a -> (Part3 xs a -> Part3 xs a)
 pull depth shape = unitR @xs #> union $ forget $ translate (V3 0 0 (0.5 * depth - epsilon)) (extrude depth shape)
   where epsilon :: a
         epsilon = 0.05
 
-cone' :: (Floating a, Field a, Module a a, Show a) => a -> Part3 '[ '["bottom"], '["top"]] a
+cone' :: (Transcendental a, Module a a, Show a) => a -> Part3 '[ '["bottom"], '["top"]] a
 cone' angle = (extrudeEx c 0 0 circle)
   where c = sin angle
 
 counterSink :: forall xs a.
-  (Floating a, Show a, Module a a, Field a)
+  (Show a, Transcendental a)
   => a -> a -> Part3 xs a -> Part3 xs a
 counterSink angle diameter = unitR @xs #> difference (forget negative)  where
   negative = translate (V3 0 0 epsilon) $ center nadir $ rotate (rotation3d pi (V3 1 0 0)) (scale diameter $ cone' angle)
@@ -610,12 +618,12 @@ linearRepeat number interval part =
   unions [translate ((shift + mult (fromIntegral i) interval)) part | i <- [negate number `div` 2..number `div` 2]]
   where shift = if number `mod` 2 == 1 then (fromRational 0.5::s) *^ interval else zero
 
-linearFill :: (ScadV v, Show s, RealFrac s, Floating s, VectorSpace s (v s)) =>
+linearFill :: (ScadV v, Show s, RealFrac s, VectorSpace s (v s), Roots s) =>
                     s -> v s -> Part xs v s -> Part '[] v s
 linearFill len interval part = linearRepeat (floor (len / norm interval)) interval part
 
 -- | Fill a rectangle in hexagonal pattern
-hexagonFill :: Module Int s => RealFrac s => Floating s => Show s => Field s => Module s s
+hexagonFill :: Module Int s => RealFrac s => Show s => Transcendental s
                => s -> s -> s
                -> Part2 xs s
                -> Part2 ('[ '["right"], '["back"], '["left"], '["front"],
@@ -710,6 +718,6 @@ renderVec v = showL (map show (toList v))
 showL :: [String] -> String
 showL v = "[" <> intercalate ", " v <> "]"
 
-showAngle :: Show a => Field a => Floating a => a -> String
+showAngle :: Transcendental a => Show a => a -> String
 showAngle x = show (x * (180 / pi))
 

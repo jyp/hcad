@@ -24,7 +24,7 @@ module HCad.Expr where
 
 
 import Algebra.Classes as A
-import Prelude hiding (divMod,div,Num(..))
+import Prelude hiding (divMod,div,Num(..),Floating(..))
 import Prelude (abs)
 import qualified Prelude
 import qualified Data.Set as Set
@@ -117,12 +117,14 @@ confun :: (Double -> Double) -> String -> Expr -> Expr
 confun f _g (Con x) = Con (f x)
 confun _f g x = Fun g [x]
 
-instance Module Expr Expr where
+instance Scalable Expr Expr where
   (*^) = (A.*)
 instance AbelianAdditive Expr where
 instance Ring Expr where
 instance Field Expr where
-instance Floating Expr where
+instance Roots Expr where
+  root k x = x ** (A.recip (fromInteger k))
+instance Transcendental Expr where
   pi = Con pi
   exp = confun exp "exp"
   log = confun log "log"

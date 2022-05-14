@@ -59,13 +59,13 @@ m64   = MNut 64     6       95      92.8     51      49.1
 
 
 
-metricNutProfile :: Floating a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2 a
+metricNutProfile :: Transcendental a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2 a
 metricNutProfile nut tol = scale flat2flat $ regularPolygonO 6
   where flat2flat = mMaxFlatsDist nut + tol
 
-metricBoltProfile :: Floating a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2 a
+metricBoltProfile :: Transcendental a => Module a a => Show a => Field a => MNut a -> a -> Part '[] V2 a
 metricBoltProfile m tol = scale (mSize m + tol) $ circle
 
-metricNutSocket :: (Floating a, Show a, Module a a, Field a) => MNut a -> a -> a -> a -> Part3 xs a -> Part3 xs a
+metricNutSocket :: (Transcendental a, Show a, Module a a, Field a) => MNut a -> a -> a -> a -> Part3 xs a -> Part3 xs a
 metricNutSocket m tol recess depth = push recess (metricNutProfile m tol) . push depth (metricBoltProfile m tol)
 
