@@ -6,8 +6,9 @@ license:        GPL
 license-file:   LICENSE
 author:         Jean-Philippe Bernardy
 maintainer:     jeanphilippe.bernardy@gmail.com
-Cabal-Version:  >= 1.18
+cabal-version:  1.18
 build-type:     Simple
+description:    Haskell CAD library on top of OpenSCAD
 
 library
   build-depends: base < 666
