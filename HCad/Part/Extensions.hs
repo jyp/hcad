@@ -1,23 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeInType #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 
 module HCad.Part.Extensions where
 
@@ -36,7 +23,7 @@ extrudeAlongSegment :: (Show a,Transcendental a)
   -> (V3 a, V3 a) -- ^ segment
   -> Part (SimpleFields '[Nadir,Zenith] ++ xs) V3 a
 extrudeAlongSegment shape upDir (start,end) = translate start $ rotate r $ center nadir $ extrude l shape
-  where r = transpose $ Mat (V3 x' (x' × z') z')
+  where r = Mat (V3 x' (x' × z') z')
         l = norm d
         d = end-start
         z' = normalize d
